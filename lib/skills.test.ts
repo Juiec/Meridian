@@ -13,6 +13,7 @@ describe("skills", () => {
     const names = skills.map((skill) => skill.name).sort();
     expect(names).toEqual([
       "code-explain",
+      "cursor-phraser",
       "daily-planning",
       "itinerary-day",
       "packing-list",
@@ -21,9 +22,16 @@ describe("skills", () => {
       "trip-planning",
       "web-research",
     ]);
+    const phraser = skills.find((skill) => skill.name === "cursor-phraser");
+    expect(phraser?.description.length).toBeGreaterThan(20);
+    expect(phraser?.description.length).toBeLessThanOrEqual(1024);
+    expect(phraser?.disableModelInvocation).toBe(false);
+    expect(phraser?.description).toMatch(/Cursor cloud agent/);
     const index = renderSkillsIndex(skills);
     expect(index).toContain("web-research:");
+    expect(index).toContain(`cursor-phraser: ${phraser?.description}`);
     expect(index).not.toContain("Read `references/source-rubric.md`");
+    expect(index).not.toContain("Read `references/brief-examples.md`");
     const parsed = splitFrontmatter(skills[0] ? `---\nname: ${skills[0].name}\ndescription: "${skills[0].description}"\n---\n${skills[0].body}\n` : "");
     expect(parsed?.body.length).toBeGreaterThan(20);
   });
@@ -32,6 +40,9 @@ describe("skills", () => {
     const loaded = readSkillFile("web-research", "references/source-rubric.md");
     expect(loaded.ok).toBe(true);
     if (loaded.ok) expect(loaded.content).toMatch(/Source rubric/);
+    const example = readSkillFile("cursor-phraser", "references/brief-examples.md");
+    expect(example.ok).toBe(true);
+    if (example.ok) expect(example.content).toMatch(/Non-binding guess/);
     const escaped = readSkillFile("web-research", "../SOUL.md");
     expect(escaped.ok).toBe(false);
   });
