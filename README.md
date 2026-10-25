@@ -84,6 +84,7 @@ Shipped skills:
 | `code-explain` | They pasted code and want it explained, not replaced |
 | `daily-planning` | They want a plan for the day or the next block of work |
 | `prompt-refine` | They want a prompt rewritten for a local model |
+| `cursor-phraser` | They want something added, fixed, or built, phrased as a brief for a Cursor cloud agent |
 | `trip-planning` | They want an outline that uses geocoding, weather, the map, and fare tools |
 | `packing-list` | They want a list shaped by destination and the forecast |
 | `itinerary-day` | They want a day-by-day plan from the pinned map |
