@@ -4,6 +4,10 @@ Meridian is a personal agent UI for a model you already run. The Next.js server 
 
 It borrows the shape of [Hermes Agent](https://hermes-agent.nousresearch.com/docs/developer-guide/prompt-assembly) and [Pi](https://pi.dev/docs/latest/skills): a cache-friendly prompt, skills loaded on demand, and bounded memory that errors instead of silently truncating. The prose and code are original.
 
+![Meridian product view](docs/meridian-product.png)
+
+Wireframe overview of the app layout.
+
 ## Run locally
 
 Node.js 22 or newer (the app uses `node:sqlite`).
