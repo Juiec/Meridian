@@ -1,0 +1,18 @@
+services:
+  meridian:
+    build: .
+    ports:
+      - "43123:43123"
+    environment:
+      LM_STUDIO_BASE_URL: ${LM_STUDIO_BASE_URL:-}
+      LM_STUDIO_API_KEY: ${LM_STUDIO_API_KEY:-}
+      MODEL: ${MODEL:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - meridian-data:/app/data
+      - ./skills:/app/skills
+      - ./agent:/app/agent
+
+volumes:
+  meridian-data:
