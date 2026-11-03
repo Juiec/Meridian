@@ -32,6 +32,7 @@ export type StoredMessage = {
 export type SessionRecord = {
   id: string;
   title: string;
+  purpose: "chat" | "travel";
   model: string;
   systemPrompt: string;
   skillsIndexHash: string;
@@ -94,6 +95,8 @@ export type HealthResult = {
 export type AgentEvent =
   | { type: "user"; message: StoredMessage }
   | { type: "note"; message: StoredMessage }
+  | { type: "title"; title: string }
+  | { type: "title_error"; message: string }
   | { type: "iteration"; n: number; max: number; phase: "tools" | "answer" }
   | { type: "delta"; text: string }
   | { type: "reasoning"; text: string }

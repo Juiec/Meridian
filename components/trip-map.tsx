@@ -27,7 +27,7 @@ export function TripMap({ places }: { places: TripPlace[] }) {
       const leaflet = await import("leaflet");
       const L = leaflet.default;
       if (cancelled || !host.current) return;
-      map = L.map(host.current, { scrollWheelZoom: false });
+      map = L.map(host.current, { scrollWheelZoom: true, dragging: true });
       L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 18,
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
@@ -70,7 +70,7 @@ export function TripMap({ places }: { places: TripPlace[] }) {
     };
   }, [places, signature]);
 
-  return <div ref={host} className="isolate z-0 h-64 w-full md:h-80" />;
+  return <div ref={host} className="isolate z-0 h-80 w-full md:h-[30rem]" />;
 }
 
 function escapeHtml(value: string): string {

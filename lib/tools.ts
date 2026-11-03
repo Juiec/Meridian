@@ -192,7 +192,7 @@ export const TOOLS: ToolDefinition[] = [
     function: {
       name: "travel_plan",
       description:
-        "List, add, remove, or update places on the Travel Agent map. Add geocodes a name when coordinates are omitted. This does not book anything.",
+        "List, add, remove, or update places on the Travel Planner map. Add geocodes a name when coordinates are omitted. This does not book anything.",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -202,7 +202,7 @@ export const TOOLS: ToolDefinition[] = [
           lat: { type: "number" },
           lng: { type: "number" },
           kind: { type: "string", enum: ["destination", "stay", "poi", "transit"] },
-          day: { type: "number" },
+          day: { type: "number", description: "Optional itinerary day, a whole number from 1 to 365." },
           note: { type: "string" },
           id: { type: "string" },
         },

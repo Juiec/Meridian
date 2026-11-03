@@ -9,6 +9,7 @@ import type { Attachment, SessionRecord, SessionSummary, StoredMessage, ToolCall
 type SessionRow = {
   id: string;
   title: string;
+  purpose: "chat" | "travel";
   model: string;
   system_prompt: string;
   skills_index_hash: string;
@@ -43,6 +44,7 @@ function mapSession(row: SessionRow): SessionRecord {
   return {
     id: row.id,
     title: row.title,
+    purpose: row.purpose,
     model: row.model,
     systemPrompt: row.system_prompt,
     skillsIndexHash: row.skills_index_hash,
@@ -93,18 +95,24 @@ export function toSummary(session: SessionRecord): SessionSummary {
   };
 }
 
-const SESSION_COLUMNS = `id, title, model, system_prompt, skills_index_hash, compacted_summary,
+const SESSION_COLUMNS = `id, title, purpose, model, system_prompt, skills_index_hash, compacted_summary,
               compacted_until_seq, pinned, archived, created_at, updated_at`;
 
 function likeTerm(query: string): string {
   return `%${query.replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
 }
 
-export function listSessions(options?: { query?: string; archived?: "hide" | "only" | "all" }): SessionSummary[] {
+export function listSessions(options?: {
+  query?: string;
+  archived?: "hide" | "only" | "all";
+  purpose?: "chat" | "travel";
+}): SessionSummary[] {
   const archived = options?.archived ?? "hide";
+  const purpose = options?.purpose ?? "chat";
   const query = options?.query?.trim() ?? "";
-  const where: string[] = [];
+  const where: string[] = ["purpose = ?"];
   const params: string[] = [];
+  params.push(purpose);
   if (archived === "hide") where.push("archived = 0");
   if (archived === "only") where.push("archived = 1");
   if (query) {
@@ -144,7 +152,7 @@ export function visibleMessages(session: SessionRecord, messages = listMessages(
   return messages.filter((message) => message.seq > session.compactedUntilSeq!);
 }
 
-export function createSession(model?: string): SessionRecord {
+export function createSession(model?: string, purpose: SessionRecord["purpose"] = "chat"): SessionRecord {
   const settings = getSettings();
   const chosen = (model ?? settings.model).trim();
   const { skills } = discoverSkills();
@@ -161,13 +169,22 @@ export function createSession(model?: string): SessionRecord {
   db()
     .prepare(
       `INSERT INTO sessions
-        (id, title, model, system_prompt, skills_index_hash, compacted_summary, compacted_until_seq, created_at, updated_at)
-       VALUES (?, 'New session', ?, ?, ?, NULL, NULL, ?, ?)`,
+        (id, title, purpose, model, system_prompt, skills_index_hash, compacted_summary, compacted_until_seq, created_at, updated_at)
+       VALUES (?, 'New session', ?, ?, ?, ?, NULL, NULL, ?, ?)`,
     )
-    .run(id, chosen, assembled.prompt, assembled.skillsIndexHash, now, now);
+    .run(id, purpose, chosen, assembled.prompt, assembled.skillsIndexHash, now, now);
   const session = getSession(id);
   if (!session) throw new Error("Session was not saved.");
   return session;
+}
+
+export function getOrCreateTravelSession(): SessionRecord {
+  const existing = db()
+    .prepare(`SELECT ${SESSION_COLUMNS} FROM sessions WHERE purpose = 'travel' ORDER BY created_at LIMIT 1`)
+    .get() as SessionRow | undefined;
+  if (existing) return mapSession(existing);
+  const session = createSession(undefined, "travel");
+  return updateSession(session.id, { title: "Trip planning" }) ?? session;
 }
 
 export function updateSession(
@@ -217,6 +234,13 @@ export function updateSession(
       next.updatedAt,
       id,
     );
+  return getSession(id);
+}
+
+export function updateSessionTitleIfDefault(id: string, title: string): SessionRecord | null {
+  db()
+    .prepare("UPDATE sessions SET title = ?, updated_at = ? WHERE id = ? AND title = 'New session'")
+    .run(title, Date.now(), id);
   return getSession(id);
 }
 

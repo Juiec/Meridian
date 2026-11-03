@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { runTurn } from "@/lib/agent";
 import type { CompletionDelta, CompletionRequest } from "@/lib/lmstudio";
+import { createSkill } from "@/lib/skill-store";
 import { createSession, getSession, insertMessage, listMessages } from "@/lib/sessions";
 import { makeHome } from "@/lib/test-home";
 import type { AgentEvent } from "@/lib/types";
@@ -18,12 +19,70 @@ function scripted(handler: (request: CompletionRequest, call: number) => Complet
 ) => AsyncGenerator<CompletionDelta> {
   let call = 0;
   return async function* (request: CompletionRequest) {
+    if (String(request.messages[0]?.content ?? "").startsWith("Create a concise, high-level title")) {
+      yield { type: "text", text: "A concise chat summary" };
+      yield { type: "finish", reason: "stop" };
+      return;
+    }
     call += 1;
     for (const delta of handler(request, call)) yield delta;
   };
 }
 
 describe("agent loop", () => {
+  it("generates a high-level chat title before answering the first request", async () => {
+    const session = createSession();
+    const events: AgentEvent[] = [];
+    const requests: CompletionRequest[] = [];
+    const complete = async function* (request: CompletionRequest) {
+      requests.push(request);
+      if (requests.length === 1) {
+        yield { type: "text" as const, text: "Title: Planning a three-week Japan itinerary" };
+        yield { type: "finish" as const, reason: "stop" };
+        return;
+      }
+      yield { type: "text" as const, text: "Let's shape the itinerary." };
+      yield { type: "finish" as const, reason: "stop" };
+    };
+
+    await runTurn({
+      sessionId: session.id,
+      content: "I want to travel to Japan for 21 days and need help deciding where to go.",
+      emit: (event) => events.push(event),
+      complete,
+    });
+
+    expect(requests[0]?.tools).toBeUndefined();
+    expect(requests[0]?.messages[1]?.content).toContain("21 days");
+    expect(requests[1]?.messages.some((message) => message.role === "user" && String(message.content).includes("21 days"))).toBe(true);
+    expect(getSession(session.id)?.title).toBe("Planning a three-week Japan itinerary");
+    expect(events.findIndex((event) => event.type === "title")).toBeGreaterThan(events.findIndex((event) => event.type === "user"));
+    expect(events.findIndex((event) => event.type === "title")).toBeLessThan(events.findIndex((event) => event.type === "iteration"));
+  });
+
+  it("reports title generation errors without blocking the chat response", async () => {
+    const session = createSession();
+    const events: AgentEvent[] = [];
+    let call = 0;
+    const complete = async function* () {
+      call += 1;
+      if (call === 1) throw new Error("title service unavailable");
+      yield { type: "text" as const, text: "The chat still works." };
+      yield { type: "finish" as const, reason: "stop" };
+    };
+
+    await runTurn({
+      sessionId: session.id,
+      content: "Help me compare two apartments for a move next month.",
+      emit: (event) => events.push(event),
+      complete,
+    });
+
+    expect(getSession(session.id)?.title).toBe("New session");
+    expect(events.some((event) => event.type === "title_error" && event.message.includes("title service unavailable"))).toBe(true);
+    expect(listMessages(session.id).some((message) => message.content === "The chat still works.")).toBe(true);
+  });
+
   it("runs a tool, keeps the memory snapshot frozen, and writes the file", async () => {
     const session = createSession();
     const events: AgentEvent[] = [];
@@ -67,15 +126,17 @@ describe("agent loop", () => {
     expect(second.messages.some((message) => message.role === "tool" && String(message.content).includes("Prefers short answers."))).toBe(true);
   });
 
-  it("inlines /skill:name without storing the body as the user message", async () => {
+  it("inlines /name without storing the body as the user message", async () => {
     const session = createSession();
     let seenUser = "";
     await runTurn({
       sessionId: session.id,
-      content: "/skill:code-explain what does `return 1` do?",
+      content: "/code-explain what does `return 1` do?",
       emit: () => undefined,
       complete: scripted((request) => {
-        const user = request.messages.find((message) => message.role === "user");
+        const user = request.messages.find(
+          (message) => message.role === "user" && String(message.content).includes("<skill name="),
+        );
         seenUser = String(user?.content ?? "");
         return [{ type: "text", text: "It returns 1." }, { type: "finish", reason: "stop" }];
       }),
@@ -84,8 +145,33 @@ describe("agent loop", () => {
     expect(seenUser).toContain("Explain code");
     expect(seenUser).toContain("what does `return 1` do?");
     const stored = listMessages(session.id).find((message) => message.role === "user");
-    expect(stored?.content.startsWith("/skill:code-explain")).toBe(true);
+    expect(stored?.content.startsWith("/code-explain")).toBe(true);
     expect(stored?.content).not.toContain("Explain code");
+  });
+
+  it("refreshes the skills index in an existing session when a skill is added", async () => {
+    const session = createSession();
+    createSkill({
+      name: "freshly-added",
+      description: "A skill added after this session started.",
+      body: "Use the newly installed procedure.",
+      disableModelInvocation: false,
+      references: [],
+    });
+    const events: AgentEvent[] = [];
+    let seenSystem = "";
+    await runTurn({
+      sessionId: session.id,
+      content: "Use the available skills.",
+      emit: (event) => events.push(event),
+      complete: scripted((request) => {
+        seenSystem = String(request.messages[0]?.content ?? "");
+        return [{ type: "text", text: "Ready." }, { type: "finish", reason: "stop" }];
+      }),
+    });
+    expect(seenSystem).toContain("freshly-added");
+    expect(getSession(session.id)?.systemPrompt).toContain("freshly-added");
+    expect(events.some((event) => event.type === "note" && event.message.content.includes("refreshed from disk"))).toBe(true);
   });
 
   it("stops after the tool budget and answers without tools", async () => {

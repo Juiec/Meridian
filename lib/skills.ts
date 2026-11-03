@@ -29,7 +29,7 @@ export function splitFrontmatter(raw: string): {
   data: Record<string, string | boolean>;
   body: string;
 } | null {
-  const text = raw.replace(/^\uFEFF/, "");
+  const text = raw.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
   if (!text.startsWith("---")) return null;
   const end = text.indexOf("\n---", 3);
   if (end === -1) return null;

@@ -50,12 +50,13 @@ This environment does not need Tailscale installed. Set the URL to wherever LM S
 
 - Streaming tokens, a thinking disclosure when the model emits reasoning, and a tool card for every call.
 - The loop keeps going until the model returns text with no tool calls, or after 6 passes. The last pass is forced to answer without tools.
+- Before answering the first message in a new chat, Meridian asks the configured model for a concise, high-level chat title. If title generation fails, the chat continues and shows the naming error.
 - **Stop** aborts the LM Studio request. Partial text is kept, a “Generation stopped.” note is stored, and unrun tool calls are closed with an error so the next turn stays valid. **Retry** drops the last assistant turn and runs the same user message again.
 - The header model control lists ids from the last successful `GET /v1/models`. If LM Studio is unreachable, that list stays available and a banner says the server is offline. You can still type an id before the first successful check.
 - Attach text, markdown, code, or a PNG/JPEG/GIF/WebP image. Text is stored with the message and sent to the model as part of the turn. Images are sent as OpenAI-style `image_url` parts when the loaded model supports vision. Files named like `.env`, keys, or pems are refused, and a file that is mostly `KEY=value` lines is refused too.
 - Sessions can be renamed, pinned, archived, searched (title or transcript), exported as Markdown or JSON, and imported from a Meridian JSON export. Deleting a chat does not touch memory. SQLite lives at `data/meridian.sqlite`. Renaming updates the chat header immediately.
-- `/skill:name` at the start of a message loads that skill for the model. The transcript stores what you typed. Up to five leading `/skill:` tokens are honored.
-- When the visible history passes about 18,000 characters and there are more than two turns, older turns are summarized. The transcript shows a compaction note. The full messages stay in SQLite. The summary is what the model sees. Compaction also rebuilds the system prompt from disk, which is when a new skill index, new memory, and edited identity enter an ongoing chat.
+- `/name` at the start of a message loads that skill for the model. The transcript stores what you typed. Up to five leading skill tokens are honored. The older `/skill:name` form still works.
+- When the visible history passes about 18,000 characters and there are more than two turns, older turns are summarized. The transcript shows a compaction note. The full messages stay in SQLite. The summary is what the model sees. Skill index changes are refreshed in existing chats on the next message; compaction also rebuilds the full system prompt from disk.
 
 ## Skills
 
@@ -69,12 +70,12 @@ description: "What it does and when to load it. The description is the only part
 
 # The procedure
 
-Steps the model should follow after skill_view, or after /skill:my-skill.
+Steps the model should follow after skill_view, or after /my-skill.
 ```
 
 Names are lowercase letters, numbers, and single hyphens. A missing description means the skill is skipped.
 
-At session start Meridian injects only an index: name, description, and path. The model loads the body with the `skill_view` tool, and a reference file with `skill_view` plus `path` (for example `references/source-rubric.md`). `list_skills` reports the live directory. Set `disable-model-invocation: true` to hide a skill from the index while still allowing `/skill:name`.
+At session start Meridian injects only an index: name, description, and path. The model loads the body with the `skill_view` tool, and a reference file with `skill_view` plus `path` (for example `references/source-rubric.md`). `list_skills` reports the live directory. Set `disable-model-invocation: true` to hide a skill from the index while still allowing `/name`.
 
 Shipped skills:
 
@@ -89,7 +90,7 @@ Shipped skills:
 | `itinerary-day` | They want a day-by-day plan from the pinned map |
 | `travel-research` | They want fares, weather, or entry notes looked up rather than invented |
 
-The desk can create, edit, and delete skills without a restart. A new skill needs a name (`lowercase-words`), a description of 1024 characters or fewer, and a body of 20,000 characters or fewer. Optional references live in `references/` as `notes.md` or `notes.txt`. `disable-model-invocation` hides a skill from the index while `/skill:name` can still load it. Saving reloads the index for the next session and for compaction. You can also add a skill by creating `skills/your-name/SKILL.md` on disk. The desk inserts `/skill:your-name` into the composer.
+The desk can create, edit, and delete skills without a restart. A new skill needs a name (`lowercase-words`), a description of 1024 characters or fewer, and a body of 20,000 characters or fewer. Optional references live in `references/` as `notes.md` or `notes.txt`. `disable-model-invocation` hides a skill from the index while `/name` can still load it. Saving or adding a skill file refreshes the index in existing chats on the next message. You can also add a skill by creating `skills/your-name/SKILL.md` on disk. The desk inserts `/your-name` into the composer.
 
 ## Memory
 
@@ -119,7 +120,7 @@ A save that would pass the limit returns an error and leaves the file unchanged.
 
 ## Tools
 
-Skills and tools are different. A skill is a prompt playbook: the model sees a short index, then loads the procedure with `skill_view` or `/skill:name`. A tool is a function the model can call. Built-in tools are `memory`, `skill_view`, `list_skills`, `fetch_url`, `current_time`, and the `travel_*` lookups below. MCP tools and custom HTTP tools join that same list. Their calls show up in the same tool cards in the transcript. The settings catalog lists every name the next turn can call.
+Skills and tools are different. A skill is a prompt playbook: the model sees a short index, then loads the procedure with `skill_view` or `/name`. A tool is a function the model can call. Built-in tools are `memory`, `skill_view`, `list_skills`, `fetch_url`, `current_time`, and the `travel_*` lookups below. MCP tools and custom HTTP tools join that same list. Their calls show up in the same tool cards in the transcript. The settings catalog lists every name the next turn can call.
 
 The browser never talks to an MCP server or a webhook. Settings and the desk ask this Next.js server, and the server connects.
 
@@ -156,9 +157,9 @@ Meridian assumes it is running on your machine, for you. Do not expose port 4312
 - Do not put secrets in a URL. Put them in environment variables or headers. Those values live under `data/`, which is gitignored, and are not included in API responses.
 - Inside Docker, a stdio command has to exist in the image (or a mounted path). `node scripts/demo-mcp.mjs` works because the image includes Node and this repo. A server on the host is reachable at `http://host.docker.internal:<port>/…`.
 
-## Travel Agent
+## Travel Planner
 
-**Travel Agent** in the sidebar (and a short link on the desk) is the same chat with a trip map beside it. Quick actions open a new session and prefill `/skill:trip-planning`, `/skill:packing-list`, or `/skill:itinerary-day`. They do not send the message for you. The model is told not to invent coordinates, weather, distances, or fares, and not to assume a home city.
+**Travel Planner** is a split-screen workspace in the sidebar, separate from ordinary chat sessions. Its dedicated trip conversation sits on the left; the map, itinerary, route distances, and fare checks sit on the right. You can leave stops unscheduled or assign any trip day from 1 to 365. Scroll over the map to zoom and drag to pan. The travel tools are also available to the model from an ordinary chat when useful. Meridian is told not to invent coordinates, weather, distances, or fares, and not to assume a home city.
 
 The map is [Leaflet](https://leafletjs.com/) with [OpenStreetMap](https://www.openstreetmap.org/copyright) tiles. No Google key. Pin a place by name and Meridian geocodes it, or let `travel_plan` do that from chat. Markers are colored by kind (destination, stay, place, transit). Places on the same day are joined by a straight line. Legs list straight-line kilometers and, when the public router answers, road distance and minutes.
 
@@ -193,7 +194,7 @@ Hermes and Pi ideas, and where they live here:
 | Idea | In Meridian |
 | --- | --- |
 | Prompt tiers: stable → context → volatile | `lib/prompt.ts`. Stable is `agent/SOUL.md` plus tool guidance. Context is `agent/AGENTS.md`. Volatile is the skills index, MEMORY and USER snapshots, and the timestamp. |
-| Skills index, body on demand | `lib/skills.ts` and `lib/skill-store.ts`. `skill_view` / `list_skills` in `lib/tools.ts`. `/skill:name` in `lib/skill-command.ts` and `lib/agent.ts` |
+| Skills index, body on demand | `lib/skills.ts` and `lib/skill-store.ts`. `skill_view` / `list_skills` in `lib/tools.ts`. `/name` in `lib/skill-command.ts` and `lib/agent.ts` |
 | Frozen memory snapshot, char-limit errors | `lib/memory.ts`. Snapshot text is rendered in `renderMemorySnapshot` and stored on the session row. |
 | Agent loop: stream, tools, append, repeat | `lib/agent.ts`. OpenAI-compatible streaming client in `lib/lmstudio.ts`, with short retries on 408/429/5xx and network blips (`lib/retry.ts`). |
 | Compaction that keeps the original transcript | `lib/compact.ts`. Summary and boundary seq are columns on the session. Messages stay in SQLite. |

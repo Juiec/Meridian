@@ -1,11 +1,11 @@
-const SKILL_TOKEN = /^\/skill:([a-z0-9]+(?:-[a-z0-9]+)*)\b\s*/i;
+const SKILL_TOKEN = /^\/(?:skill:)?([a-z0-9]+(?:-[a-z0-9]+)*)\b\s*/i;
 
 export type SkillCommand = {
   skills: string[];
   rest: string;
 };
 
-/** Parse leading `/skill:name` tokens. Later text is the user request. */
+/** Parse leading `/name` tokens (also accepting the legacy `/skill:name` form). */
 export function parseSkillCommand(input: string): SkillCommand | null {
   let rest = input.trim();
   const skills: string[] = [];

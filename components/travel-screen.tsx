@@ -1,57 +1,21 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { useAppState } from "@/components/app-state";
 import { readJson } from "@/components/client-api";
+import { ChatScreen } from "@/components/chat-screen";
 import { useOpenSidebar } from "@/components/shell";
 import { SidebarToggle } from "@/components/sidebar";
-import { SkillEditor } from "@/components/skill-editor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { groupPlaces } from "@/lib/travel-math";
-import type { FareQuote, TravelPublicSettings, TripKind, TripLeg, TripPlace } from "@/lib/travel-types";
+import { MAX_TRIP_DAYS, type FareQuote, type TravelPublicSettings, type TripKind, type TripLeg, type TripPlace } from "@/lib/travel-types";
 
 const TripMap = dynamic(() => import("@/components/trip-map").then((mod) => mod.TripMap), {
   ssr: false,
-  loading: () => <div className="h-64 animate-pulse rounded-xl bg-muted md:h-80" />,
+  loading: () => <div className="h-[min(52vh,34rem)] min-h-72 animate-pulse rounded-xl bg-muted" />,
 });
-
-const ACTIONS = [
-  {
-    title: "Plan a trip",
-    detail: "Asks for origin, dates, and constraints, then pins the destination.",
-    prompt:
-      "/skill:trip-planning Plan a trip. Ask for any of these you do not already have: origin, destination, dates, who is going, constraints, and a budget frame. Then geocode the destination, check the weather, and pin it. Do not invent prices.",
-  },
-  {
-    title: "Packing list",
-    detail: "Uses the forecast once a destination is known.",
-    prompt:
-      "/skill:packing-list Make a packing list. If destination, dates, or trip type are missing, ask. Use the weather tool once you know the place.",
-  },
-  {
-    title: "Day-by-day itinerary",
-    detail: "Orders the pinned places and measures the legs.",
-    prompt:
-      "/skill:itinerary-day Build a day-by-day itinerary from the pinned trip. Estimate travel time with the route tool. Do not invent hours you did not look up.",
-  },
-  {
-    title: "Lisbon weekend sample",
-    detail: "A filled-in example. It is not your home city.",
-    prompt:
-      "/skill:trip-planning Plan a long weekend in Lisbon for two people, 30 October to 2 November 2026, starting from New York. Pin Lisbon, check the weather, and compare fares. Say clearly if a fare is illustrative. Do not book.",
-  },
-];
-
-const TRAVEL_SKILLS = [
-  { name: "trip-planning", blurb: "Destination, dates, constraints, and an outline." },
-  { name: "packing-list", blurb: "A list shaped by trip type and the forecast." },
-  { name: "itinerary-day", blurb: "A day-by-day schedule from the pinned map." },
-  { name: "travel-research", blurb: "What to look up for fares, weather, and entry rules." },
-];
 
 type TravelPayload = {
   places: TripPlace[];
@@ -60,14 +24,14 @@ type TravelPayload = {
 };
 
 export function TravelScreen() {
-  const router = useRouter();
   const openSidebar = useOpenSidebar();
-  const { skills, refreshSkills, createSession, setActiveSessionId, queueComposer } = useAppState();
   const [payload, setPayload] = useState<TravelPayload | null>(null);
+  const [plannerSessionId, setPlannerSessionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [placeName, setPlaceName] = useState("");
   const [placeDay, setPlaceDay] = useState("");
+  const [placeDayDrafts, setPlaceDayDrafts] = useState<Record<string, string>>({});
   const [placeKind, setPlaceKind] = useState<TripKind>("destination");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -77,16 +41,19 @@ export function TravelScreen() {
   const [priceUrl, setPriceUrl] = useState("");
   const [priceKey, setPriceKey] = useState("");
   const [clearKey, setClearKey] = useState(false);
-  const [editing, setEditing] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
-        const data = await readJson<TravelPayload>(await fetch("/api/travel"));
+        const [trip, planner] = await Promise.all([
+          readJson<TravelPayload>(await fetch("/api/travel")),
+          readJson<{ session: { id: string } }>(await fetch("/api/travel/session")),
+        ]);
         if (cancelled) return;
-        setPayload(data);
-        setPriceUrl(data.settings.priceUrl);
+        setPayload(trip);
+        setPlannerSessionId(planner.session.id);
+        setPriceUrl(trip.settings.priceUrl);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Could not load the trip.");
       }
@@ -95,20 +62,6 @@ export function TravelScreen() {
       cancelled = true;
     };
   }, []);
-
-  async function begin(prompt: string) {
-    setBusy("chat");
-    setError(null);
-    try {
-      const id = await createSession();
-      setActiveSessionId(id);
-      queueComposer(prompt);
-      router.push("/");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not open a chat.");
-      setBusy(null);
-    }
-  }
 
   async function reload(next: TravelPayload) {
     setPayload(next);
@@ -146,6 +99,11 @@ export function TravelScreen() {
         }),
       );
       await reload(data);
+      setPlaceDayDrafts((current) => {
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not move that place.");
     }
@@ -210,86 +168,72 @@ export function TravelScreen() {
 
   const places = payload?.places ?? [];
   const groups = groupPlaces(places);
+  const plannedDays = new Set(places.flatMap((place) => (place.day ? [place.day] : []))).size;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex items-center gap-2 border-b border-border px-3 py-3 md:px-6">
         <SidebarToggle onOpen={openSidebar} />
         <div>
-          <p className="font-display text-2xl leading-none">Travel Agent</p>
-          <p className="mt-1 text-xs text-muted-foreground">Itineraries, public lookups, and the trip map. No checkout.</p>
+          <p className="font-display text-2xl leading-none">Travel Planner</p>
+          <p className="mt-1 text-xs text-muted-foreground">Your trip conversation and map, side by side.</p>
         </div>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-6">
-        <div className="mx-auto max-w-3xl space-y-8 pb-16">
-          <p className="text-sm leading-6 text-muted-foreground">
-            This plans trips with the same agent as the rest of Meridian. Skills are the playbooks. Travel tools look up
-            places, weather, nearby spots, routes, and fares. Notes that should last go in memory. Meridian does not book
-            or take payment. A fare is illustrative unless you point the price check at your own search API, or you
-            connect an MCP server or custom tool that reads a provider you trust.
-          </p>
-          {error ? <p className="text-sm text-destructive">{error}</p> : null}
-
-          <section>
-            <h2 className="text-xs tracking-[0.14em] text-muted-foreground uppercase">Start in chat</h2>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              {ACTIONS.map((action) => (
-                <button
-                  key={action.title}
-                  type="button"
-                  disabled={busy === "chat"}
-                  onClick={() => void begin(action.prompt)}
-                  className="rounded-xl border border-border bg-card px-3 py-3 text-left hover:bg-muted/60"
-                >
-                  <span className="block text-sm font-medium">{action.title}</span>
-                  <span className="mt-1 block text-xs leading-5 text-muted-foreground">{action.detail}</span>
-                </button>
-              ))}
-            </div>
+      <main className="min-h-0 flex-1 overflow-y-auto lg:overflow-hidden">
+        <div className="grid min-h-full grid-cols-1 lg:h-full lg:grid-cols-[minmax(20rem,0.92fr)_minmax(0,1.08fr)]">
+          <section aria-label="Trip conversation" className="flex min-h-[34rem] min-w-0 flex-col border-b border-border lg:min-h-0 lg:border-b-0 lg:border-r">
+            {plannerSessionId ? (
+              <ChatScreen embedded embeddedSessionId={plannerSessionId} />
+            ) : (
+              <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground" role="status">
+                Opening your trip conversation…
+              </div>
+            )}
           </section>
+          <div className="min-h-[40rem] space-y-5 overflow-y-auto px-4 py-5 lg:min-h-0 lg:px-5">
+            <section className="flex items-end justify-between gap-3">
+              <div>
+                <p className="text-[10px] tracking-[0.18em] text-copper uppercase">Trip desk</p>
+                <h1 className="mt-1 font-display text-3xl leading-tight">Your trip, in place.</h1>
+              </div>
+              <dl className="flex gap-4 text-right">
+                <div>
+                  <dt className="text-[9px] tracking-wide text-muted-foreground uppercase">Stops</dt>
+                  <dd className="font-display text-xl tabular-nums">{places.length}</dd>
+                </div>
+                <div>
+                  <dt className="text-[9px] tracking-wide text-muted-foreground uppercase">Days</dt>
+                  <dd className="font-display text-xl tabular-nums">{plannedDays}</dd>
+                </div>
+              </dl>
+            </section>
+            {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
 
-          <section>
-            <h2 className="text-xs tracking-[0.14em] text-muted-foreground uppercase">Travel skills</h2>
-            <ul className="mt-3 space-y-2">
-              {TRAVEL_SKILLS.map((skill) => {
-                const installed = skills.some((item) => item.name === skill.name);
-                return (
-                  <li key={skill.name} className="flex items-start justify-between gap-3 rounded-xl border border-border px-3 py-2">
-                    <div>
-                      <p className="font-mono text-[13px] text-copper">{skill.name}</p>
-                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                        {installed ? skill.blurb : "Not installed."}
-                      </p>
-                    </div>
-                    {installed ? (
-                      <button
-                        type="button"
-                        className="shrink-0 text-[11px] text-muted-foreground underline-offset-2 hover:underline"
-                        onClick={() => setEditing(skill.name)}
-                      >
-                        Edit
-                      </button>
-                    ) : null}
+            <section className="space-y-3">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h2 className="font-display text-2xl leading-none">Map & itinerary</h2>
+                <p className="mt-1 text-xs text-muted-foreground">Scroll to zoom · drag to move</p>
+              </div>
+              <ul aria-label="Map legend" className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+                {[
+                  ["Destination", "#c47a3a"],
+                  ["Stay", "#6a8f72"],
+                  ["Place", "#8d7355"],
+                  ["Transit", "#9a8f80"],
+                ].map(([label, color]) => (
+                  <li key={label} className="flex items-center gap-1.5">
+                    <span className="size-2 rounded-full" style={{ backgroundColor: color }} aria-hidden />
+                    {label}
                   </li>
-                );
-              })}
-            </ul>
-            <SkillEditor
-              key={editing ?? "closed"}
-              open={editing !== null}
-              skillName={editing}
-              onClose={() => setEditing(null)}
-              onSaved={refreshSkills}
-            />
-          </section>
-
-          <section className="space-y-3">
-            <h2 className="text-xs tracking-[0.14em] text-muted-foreground uppercase">Map and days</h2>
-            <div className="overflow-hidden rounded-xl border border-border">
-              {payload ? <TripMap places={places} /> : <div className="h-64 animate-pulse bg-muted md:h-80" />}
+                ))}
+              </ul>
+            </div>
+            <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+              {payload ? <TripMap places={places} /> : <div className="h-[min(52vh,34rem)] min-h-72 animate-pulse bg-muted" />}
             </div>
             <form
-              className="grid gap-2 sm:grid-cols-[1fr_8rem_9rem_auto]"
+              className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_8rem_8rem_auto]"
               onSubmit={(event) => {
                 event.preventDefault();
                 void addPlace();
@@ -312,25 +256,23 @@ export function TravelScreen() {
                 <option value="poi">Place</option>
                 <option value="transit">Transit</option>
               </select>
-              <select
-                aria-label="Itinerary day"
-                className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm dark:bg-input/30"
+              <Input
+                type="number"
+                min={1}
+                max={MAX_TRIP_DAYS}
+                step={1}
+                inputMode="numeric"
+                aria-label={`Day to schedule, optional, up to ${MAX_TRIP_DAYS}`}
+                placeholder="Day (optional)"
                 value={placeDay}
                 onChange={(event) => setPlaceDay(event.target.value)}
-              >
-                <option value="">Unscheduled</option>
-                {Array.from({ length: 7 }, (_, index) => (
-                  <option key={index + 1} value={String(index + 1)}>
-                    Day {index + 1}
-                  </option>
-                ))}
-              </select>
+              />
               <Button type="submit" disabled={busy === "place" || !placeName.trim()}>
                 {busy === "place" ? "Looking up…" : "Pin"}
               </Button>
             </form>
             {places.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No places yet. Pin a city, or ask in chat and the agent will.</p>
+              <p className="text-sm text-muted-foreground">No stops yet. Pin a city, station, or stay to start shaping the itinerary.</p>
             ) : (
               <div className="space-y-4">
                 {groups.map((group) => (
@@ -343,19 +285,30 @@ export function TravelScreen() {
                             {place.name}
                             <span className="ml-2 text-[11px] tracking-wide text-muted-foreground uppercase">{place.kind}</span>
                           </span>
-                          <select
-                            aria-label={`Day for ${place.name}`}
-                            className="h-8 rounded-lg border border-input bg-transparent px-2 text-xs dark:bg-input/30"
-                            value={place.day ?? ""}
-                            onChange={(event) => void movePlace(place.id, event.target.value)}
-                          >
-                            <option value="">Unscheduled</option>
-                            {Array.from({ length: 7 }, (_, index) => (
-                              <option key={index + 1} value={String(index + 1)}>
-                                Day {index + 1}
-                              </option>
-                            ))}
-                          </select>
+                          <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                            Day
+                            <Input
+                              className="h-8 w-20 text-xs"
+                              type="number"
+                              min={1}
+                              max={MAX_TRIP_DAYS}
+                              step={1}
+                              inputMode="numeric"
+                              aria-label={`Day for ${place.name}, up to ${MAX_TRIP_DAYS}`}
+                              placeholder="—"
+                              value={placeDayDrafts[place.id] ?? (place.day?.toString() ?? "")}
+                              onChange={(event) =>
+                                setPlaceDayDrafts((current) => ({ ...current, [place.id]: event.target.value }))
+                              }
+                              onBlur={(event) => {
+                                const day = event.currentTarget.value;
+                                if (day !== (place.day?.toString() ?? "")) void movePlace(place.id, day);
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") event.currentTarget.blur();
+                              }}
+                            />
+                          </label>
                           <button
                             type="button"
                             className="text-[11px] text-muted-foreground underline-offset-2 hover:underline"
@@ -464,8 +417,9 @@ export function TravelScreen() {
               </div>
             </details>
           </section>
+          </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

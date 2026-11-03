@@ -45,7 +45,8 @@ describe("travel math and plan", () => {
   });
 
   it("pins a place without replacing built-in tools", async () => {
-    const place = addTripPlace({ name: "Alfama", lat: 38.71, lng: -9.13, kind: "poi", day: 1 });
+    const place = addTripPlace({ name: "Alfama", lat: 38.71, lng: -9.13, kind: "poi", day: 21 });
+    expect(place.day).toBe(21);
     const listed = await executeTravelTool("travel_plan", { action: "list" });
     expect(listed.ok).toBe(true);
     expect(JSON.stringify(listed.places)).toContain(place.id);

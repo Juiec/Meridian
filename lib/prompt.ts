@@ -19,7 +19,7 @@ const TOOL_GUIDANCE = `# How to work
 Tools are how you act. Call them. Do not claim you saved a memory, loaded a skill, or read a page unless the tool result says so.
 
 ## Skills
-The skills index later in this prompt lists names, descriptions, and paths. It does not include the procedures. Before you follow a procedure, if one skill clearly matches the task, load it with skill_view and follow it. Load a reference file only when the skill points at one. If the user message already contains a <skill> block, that skill was forced with /skill:name — follow it and do not load it again unless you need a reference file.
+The skills index later in this prompt lists names, descriptions, and paths. It does not include the procedures. Before you follow a procedure, if one skill clearly matches the task, load it with skill_view and follow it. Load a reference file only when the skill points at one. If the user message already contains a <skill> block, that skill was forced with /name — follow it and do not load it again unless you need a reference file.
 
 Do not load every skill. Do not invent skills that are not in the index. Procedures belong in skills. Facts that should apply in every session belong in memory.
 
@@ -103,7 +103,7 @@ export function assembleSystemPrompt(input: {
 
 export function skillsChangedNote(skills: SkillMeta[]): string {
   return [
-    "Skills index changed since this session's prompt was frozen. Use this list for the rest of the session. The system prompt itself updates on the next session (or after compaction rebuilds it).",
+    "Skills index refreshed from disk. The updated index is now in this session's system prompt.",
     renderSkillsIndex(indexSkills(skills)),
   ].join("\n\n");
 }

@@ -19,7 +19,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       {sidebarOpen ? (
         <button
           type="button"
-          aria-label="Close sessions"
+          aria-label="Close navigation"
           className="fixed inset-0 z-20 bg-black/40 md:hidden"
           onClick={() => setSidebarOpen(false)}
         />

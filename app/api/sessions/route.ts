@@ -8,8 +8,9 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const archivedParam = url.searchParams.get("archived");
   const archived = archivedParam === "only" || archivedParam === "1" ? "only" : archivedParam === "all" ? "all" : "hide";
+  const purpose = url.searchParams.get("purpose") === "travel" ? "travel" : "chat";
   return Response.json({
-    sessions: listSessions({ query: url.searchParams.get("q") ?? "", archived }),
+    sessions: listSessions({ query: url.searchParams.get("q") ?? "", archived, purpose }),
   });
 }
 

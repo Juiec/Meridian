@@ -47,7 +47,7 @@ export function Inspector({
         <section>
           <h3 className="text-xs tracking-[0.14em] text-muted-foreground uppercase">Skills</h3>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            The prompt only carries this index. The model loads a body with skill_view, or you can force one. Saving a skill reloads the index immediately.
+            The prompt carries this index. The model loads a body with skill_view, or you can force one with /name. Saving a skill refreshes the index in existing chats on their next message.
           </p>
           <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => setCreating(true)}>
             New skill
@@ -104,10 +104,10 @@ export function Inspector({
         <section>
           <h3 className="text-xs tracking-[0.14em] text-muted-foreground uppercase">Travel</h3>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            Itineraries, weather, and fare comparisons live on the Travel Agent page. Skills are the playbooks. The map and travel tools do the lookups. Nothing is booked from here.
+            Plan visually on the Travel Planner page. It has its own map, itinerary, and fare checks, separate from chat sessions. Nothing is booked from here.
           </p>
           <Link href="/travel" className="mt-2 inline-block text-xs text-copper underline-offset-2 hover:underline">
-            Open Travel Agent
+            Open Travel Planner
           </Link>
         </section>
         <DocEditor />
@@ -128,11 +128,11 @@ export function Inspector({
         <section>
           <h3 className="text-xs tracking-[0.14em] text-muted-foreground uppercase">Prompt snapshot</h3>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            Stable identity, then project context, then the volatile index, memory, and time. Captured when the session started. Compaction rebuilds it. Ordinary memory, skill, and identity writes wait for the next session unless compaction runs.
+            Identity, project context, memory, and time are captured when the session starts. The skills index refreshes when skill files change; compaction rebuilds the full prompt.
           </p>
           {systemPrompt ? (
             <details className="mt-2">
-              <summary className="cursor-pointer text-xs text-copper">Show frozen prompt</summary>
+              <summary className="cursor-pointer text-xs text-copper">Show prompt snapshot</summary>
               <pre className="mt-2 max-h-80 overflow-auto rounded-lg bg-background p-3 text-[11px] leading-5 whitespace-pre-wrap">
                 {systemPrompt}
               </pre>

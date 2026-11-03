@@ -117,7 +117,7 @@ export function Composer({
               }
             }}
             rows={2}
-            placeholder="Message Meridian. /skill:daily-planning forces a skill."
+            placeholder="Message Meridian. /daily-planning forces a skill."
             disabled={running}
             className="min-h-16 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent"
           />

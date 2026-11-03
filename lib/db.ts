@@ -11,6 +11,7 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
+  purpose TEXT NOT NULL DEFAULT 'chat',
   model TEXT NOT NULL DEFAULT '',
   system_prompt TEXT NOT NULL,
   skills_index_hash TEXT NOT NULL DEFAULT '',
@@ -52,6 +53,9 @@ function migrate(database: DatabaseSync) {
   }
   if (sessions.size > 0 && !sessions.has("archived")) {
     database.exec("ALTER TABLE sessions ADD COLUMN archived INTEGER NOT NULL DEFAULT 0");
+  }
+  if (sessions.size > 0 && !sessions.has("purpose")) {
+    database.exec("ALTER TABLE sessions ADD COLUMN purpose TEXT NOT NULL DEFAULT 'chat'");
   }
   const messages = columnNames(database, "messages");
   if (messages.size > 0 && !messages.has("attachments")) {

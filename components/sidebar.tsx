@@ -205,7 +205,7 @@ export function Sidebar({
             variant="ghost"
             size="icon-sm"
             className="md:hidden"
-            aria-label="Close sessions"
+            aria-label="Close navigation"
             onClick={onClose}
           >
             <X />
@@ -213,9 +213,10 @@ export function Sidebar({
         </div>
       </div>
       <div className="space-y-2 px-3 pb-3">
+        <p className="px-1 text-[11px] tracking-[0.14em] text-muted-foreground uppercase">Chats</p>
         <Button type="button" className="w-full" onClick={() => void startNew()} disabled={busy}>
           <Plus />
-          New session
+          New chat
         </Button>
         <Input
           value={query}
@@ -223,11 +224,11 @@ export function Sidebar({
             setQuery(event.target.value);
             setMatches(null);
           }}
-          placeholder="Search title or transcript"
-          aria-label="Search sessions"
+          placeholder="Search chats"
+          aria-label="Search chats"
         />
       </div>
-      <nav aria-label="Sessions" className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+      <nav aria-label="Chats" className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {sessionsLoading ? (
           <p className="px-2 py-3 text-sm text-muted-foreground">Loading sessions…</p>
         ) : sessionsError ? (
@@ -398,6 +399,7 @@ export function Sidebar({
           <Upload className="size-4" />
           Import JSON
         </button>
+        <p className="px-2 pt-2 text-[11px] tracking-[0.14em] text-muted-foreground uppercase">Tools</p>
         <Link
           href="/travel"
           onClick={onClose}
@@ -407,7 +409,7 @@ export function Sidebar({
           )}
         >
           <Compass className="size-4" />
-          Travel Agent
+          Travel Planner
         </Link>
         <Link
           href="/settings"
@@ -464,7 +466,7 @@ export function SidebarToggle({ onOpen }: { onOpen: () => void }) {
       variant="ghost"
       size="icon-sm"
       className="md:hidden"
-      aria-label="Open sessions"
+      aria-label="Open navigation"
       onClick={onOpen}
     >
       <Menu />

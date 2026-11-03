@@ -128,7 +128,7 @@ export function SkillEditor({
         <DialogHeader>
           <DialogTitle>{skillName ? `Edit ${skillName}` : "New skill"}</DialogTitle>
           <DialogDescription>
-            Only the name and description enter the skills index. The body loads when the model calls skill_view or you type /skill:name.
+            Only the name and description enter the skills index. The body loads when the model calls skill_view or you type /name.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
@@ -160,7 +160,7 @@ export function SkillEditor({
               checked={disableModelInvocation}
               onChange={(event) => setDisableModelInvocation(event.target.checked)}
             />
-            Hide from the model index. /skill:name can still load it.
+            Hide from the model index. /name can still load it.
           </label>
           <div className="space-y-2">
             <div className="flex items-center justify-between">

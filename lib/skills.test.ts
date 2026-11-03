@@ -28,6 +28,17 @@ describe("skills", () => {
     expect(parsed?.body.length).toBeGreaterThan(20);
   });
 
+  it("parses Windows CRLF frontmatter", () => {
+    const parsed = splitFrontmatter(
+      '---\r\nname: windows-skill\r\ndescription: "A skill with Windows line endings."\r\n---\r\nBody',
+    );
+    expect(parsed?.data).toEqual({
+      name: "windows-skill",
+      description: "A skill with Windows line endings.",
+    });
+    expect(parsed?.body).toBe("Body");
+  });
+
   it("loads a reference and refuses path traversal", () => {
     const loaded = readSkillFile("web-research", "references/source-rubric.md");
     expect(loaded.ok).toBe(true);

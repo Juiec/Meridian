@@ -1,4 +1,5 @@
 export type TripKind = "destination" | "stay" | "poi" | "transit";
+export const MAX_TRIP_DAYS = 365;
 
 export type TripPlace = {
   id: string;

@@ -20,10 +20,16 @@ type DetailResponse = {
   messages: StoredMessage[];
 };
 
-export function ChatScreen() {
+export function ChatScreen({
+  embedded = false,
+  embeddedSessionId,
+}: {
+  embedded?: boolean;
+  embeddedSessionId?: string | null;
+} = {}) {
   const openSidebar = useOpenSidebar();
   const {
-    activeSessionId,
+    activeSessionId: selectedSessionId,
     setActiveSessionId,
     createSession,
     settings,
@@ -34,6 +40,7 @@ export function ChatScreen() {
     composerSeed,
     queueComposer,
   } = useAppState();
+  const activeSessionId = embedded ? embeddedSessionId ?? null : selectedSessionId;
   const [focusTick, setFocusTick] = useState(0);
   const [appliedSeed, setAppliedSeed] = useState<string | null>(null);
   const [detail, setDetail] = useState<SessionRecord | null>(null);
@@ -53,15 +60,15 @@ export function ChatScreen() {
   const runFor = useRef<string | null>(null);
   const localId = useRef(0);
 
-  if (composerSeed && composerSeed !== appliedSeed) {
+  if (!embedded && composerSeed && composerSeed !== appliedSeed) {
     setAppliedSeed(composerSeed);
     setDraft(composerSeed);
     setFocusTick((value) => value + 1);
   }
 
   useEffect(() => {
-    if (composerSeed) queueComposer(null);
-  }, [composerSeed, queueComposer]);
+    if (!embedded && composerSeed) queueComposer(null);
+  }, [composerSeed, embedded, queueComposer]);
 
   useEffect(() => {
     if (focusTick === 0) return;
@@ -99,8 +106,17 @@ export function ChatScreen() {
     return () => ac.abort();
   }, [activeSessionId]);
 
-  function applyEvent(event: AgentEvent) {
-    if (event.type === "iteration") {
+  function applyEvent(event: AgentEvent, sessionId: string) {
+    if (event.type === "title") {
+      setDetail((current) =>
+        current?.id === sessionId ? { ...current, title: event.title, updatedAt: Date.now() } : current,
+      );
+      void refreshSessions().catch((err) => {
+        setStreamError(err instanceof Error ? `Could not refresh chat list: ${err.message}` : "Could not refresh chat list.");
+      });
+    } else if (event.type === "title_error") {
+      setStreamError(event.message);
+    } else if (event.type === "iteration") {
       const label = event.phase === "answer" ? "Writing the answer" : "Tools allowed";
       setStatus(`Pass ${event.n} of ${event.max} · ${label}`);
       setLive((current) => ({ parts: current?.parts ?? [], status: `Pass ${event.n} of ${event.max}` }));
@@ -170,7 +186,7 @@ export function ChatScreen() {
       }
       await readSse(response, (name, data) => {
         const event = data as AgentEvent;
-        if (event && typeof event === "object" && "type" in event) applyEvent(event);
+        if (event && typeof event === "object" && "type" in event) applyEvent(event, sessionId);
         else if (name === "error") setStreamError("The stream returned an unreadable event.");
       });
       await load(sessionId);
@@ -199,8 +215,13 @@ export function ChatScreen() {
   async function begin(sessionId: string | null) {
     let id = sessionId;
     if (!id) {
+      if (embedded) throw new Error("The travel conversation is not ready yet.");
       id = await createSession();
+      runFor.current = id;
+      setStreamingId(id);
       setActiveSessionId(id);
+      await load(id);
+      return id;
     }
     runFor.current = id;
     setStreamingId(id);
@@ -336,16 +357,20 @@ export function ChatScreen() {
     <div className="flex min-h-0 flex-1">
       <section className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2 md:px-4">
-          <SidebarToggle onOpen={openSidebar} />
+          {embedded ? null : <SidebarToggle onOpen={openSidebar} />}
           <div className="min-w-0 flex-1">
             <p className="truncate font-display text-xl leading-none">
-              {headerTitle}
+              {embedded ? "Trip conversation" : headerTitle}
             </p>
             <p className="truncate text-[11px] text-muted-foreground">
-              {threadDetail ? "Prompt snapshot frozen for this session" : "Sessions, skills, and a short memory"}
+              {embedded
+                ? "Separate from your chat sessions"
+                : threadDetail
+                  ? "Prompt snapshot frozen for this session"
+                  : "Sessions, skills, and a short memory"}
             </p>
           </div>
-          {threadDetail ? (
+          {threadDetail && !embedded ? (
             <div className="flex items-center gap-1">
               <Button type="button" variant="ghost" size="icon-sm" aria-label="Export markdown" onClick={() => void download("md", headerTitle)}>
                 <Download />
@@ -355,48 +380,52 @@ export function ChatScreen() {
               </Button>
             </div>
           ) : null}
-          <label className="flex min-w-0 items-center gap-2">
-            <span className="hidden text-[11px] tracking-wide text-muted-foreground uppercase sm:inline">Model</span>
-            {modelChoices.length > 0 ? (
-              <select
-                aria-label="Model for this session"
-                className="h-8 max-w-40 rounded-lg border border-input bg-background px-2 text-xs md:max-w-56"
-                value={modelDraft || settings?.model || ""}
-                disabled={!threadDetail || running}
-                onChange={(event) => {
-                  setModelDraft(event.target.value);
-                  void saveModel(event.target.value);
-                }}
+          {!embedded ? (
+            <>
+              <label className="flex min-w-0 items-center gap-2">
+                <span className="hidden text-[11px] tracking-wide text-muted-foreground uppercase sm:inline">Model</span>
+                {modelChoices.length > 0 ? (
+                  <select
+                    aria-label="Model for this session"
+                    className="h-8 max-w-40 rounded-lg border border-input bg-background px-2 text-xs md:max-w-56"
+                    value={modelDraft || settings?.model || ""}
+                    disabled={!threadDetail || running}
+                    onChange={(event) => {
+                      setModelDraft(event.target.value);
+                      void saveModel(event.target.value);
+                    }}
+                  >
+                    {!modelDraft || modelChoices.includes(modelDraft) ? null : <option value={modelDraft}>{modelDraft}</option>}
+                    {modelChoices.map((id) => (
+                      <option key={id} value={id}>
+                        {id}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <Input
+                    value={modelDraft}
+                    onChange={(event) => setModelDraft(event.target.value)}
+                    onBlur={() => void saveModel()}
+                    placeholder={settings?.model || "model id"}
+                    aria-label="Model id for this session"
+                    className="w-32 md:w-56"
+                    disabled={!threadDetail || running}
+                  />
+                )}
+              </label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Open skills and memory"
+                onClick={() => setInspectorOpen(true)}
+                className="xl:hidden"
               >
-                {!modelDraft || modelChoices.includes(modelDraft) ? null : <option value={modelDraft}>{modelDraft}</option>}
-                {modelChoices.map((id) => (
-                  <option key={id} value={id}>
-                    {id}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <Input
-                value={modelDraft}
-                onChange={(event) => setModelDraft(event.target.value)}
-                onBlur={() => void saveModel()}
-                placeholder={settings?.model || "model id"}
-                aria-label="Model id for this session"
-                className="w-32 md:w-56"
-                disabled={!threadDetail || running}
-              />
-            )}
-          </label>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Open skills and memory"
-            onClick={() => setInspectorOpen(true)}
-            className="xl:hidden"
-          >
-            <PanelRight />
-          </Button>
+                <PanelRight />
+              </Button>
+            </>
+          ) : null}
         </header>
         {offline ? (
           <p className="border-b border-destructive/30 bg-destructive/10 px-4 py-2 text-sm text-destructive" role="status">
@@ -447,19 +476,21 @@ export function ChatScreen() {
           disabledReason={disabledReason}
         />
       </section>
-      <Inspector
-        open={inspectorOpen}
-        onClose={() => setInspectorOpen(false)}
-        systemPrompt={threadDetail?.systemPrompt ?? null}
-        onInsertSkill={(name) => {
-          setDraft((current) => {
-            const prefix = `/skill:${name} `;
-            return current.startsWith(prefix) ? current : `${prefix}${current}`;
-          });
-          setInspectorOpen(false);
-        }}
-      />
-      {inspectorOpen ? (
+      {!embedded ? (
+        <Inspector
+          open={inspectorOpen}
+          onClose={() => setInspectorOpen(false)}
+          systemPrompt={threadDetail?.systemPrompt ?? null}
+          onInsertSkill={(name) => {
+            setDraft((current) => {
+              const existing = current.match(/^\/(?:skill:)?([a-z0-9]+(?:-[a-z0-9]+)*)\b/i);
+              return existing?.[1].toLowerCase() === name ? current : `/${name} ${current}`;
+            });
+            setInspectorOpen(false);
+          }}
+        />
+      ) : null}
+      {!embedded && inspectorOpen ? (
         <button
           type="button"
           aria-label="Close skills and memory"
@@ -494,7 +525,7 @@ function EmptySession() {
         <li>Tell it something it should still know next time.</li>
         <li>Paste a function and ask what it actually does.</li>
         <li>
-          Type <span className="font-mono text-foreground">/skill:daily-planning</span> and name the day.
+          Type <span className="font-mono text-foreground">/daily-planning</span> and name the day.
         </li>
       </ul>
     </div>

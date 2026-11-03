@@ -214,6 +214,11 @@ function scripted(handler: (request: CompletionRequest, call: number) => Complet
 ) => AsyncGenerator<CompletionDelta> {
   let call = 0;
   return async function* (request: CompletionRequest) {
+    if (String(request.messages[0]?.content ?? "").startsWith("Create a concise, high-level title")) {
+      yield { type: "text", text: "A concise chat summary" };
+      yield { type: "finish", reason: "stop" };
+      return;
+    }
     call += 1;
     for (const delta of handler(request, call)) yield delta;
   };

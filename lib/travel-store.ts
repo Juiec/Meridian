@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { writeAtomic } from "@/lib/atomic";
 import { travelPlanPath, travelSettingsPath } from "@/lib/paths";
 import { classifyUrl } from "@/lib/net";
-import type { TravelPublicSettings, TripKind, TripPlace } from "@/lib/travel-types";
+import { MAX_TRIP_DAYS, type TravelPublicSettings, type TripKind, type TripPlace } from "@/lib/travel-types";
 
 const KINDS = new Set<TripKind>(["destination", "stay", "poi", "transit"]);
 const MAX_PLACES = 40;
@@ -46,7 +46,9 @@ export function addTripPlace(input: {
   if (Math.abs(input.lat) > 90 || Math.abs(input.lng) > 180) throw new Error("Coordinates are out of range.");
   const kind = input.kind && KINDS.has(input.kind) ? input.kind : "destination";
   const day = input.day === null || input.day === undefined ? null : input.day;
-  if (day !== null && (!Number.isInteger(day) || day < 1 || day > 14)) throw new Error("Day must be from 1 to 14.");
+  if (day !== null && (!Number.isInteger(day) || day < 1 || day > MAX_TRIP_DAYS)) {
+    throw new Error(`Day must be a whole number from 1 to ${MAX_TRIP_DAYS}.`);
+  }
   const place: TripPlace = {
     id: randomUUID(),
     name,
@@ -67,8 +69,8 @@ export function updateTripPlace(id: string, patch: { day?: number | null; kind?:
   if (index < 0) throw new Error("That place is not on the trip.");
   const current = places[index];
   if (patch.day !== undefined) {
-    if (patch.day !== null && (!Number.isInteger(patch.day) || patch.day < 1 || patch.day > 14)) {
-      throw new Error("Day must be from 1 to 14.");
+    if (patch.day !== null && (!Number.isInteger(patch.day) || patch.day < 1 || patch.day > MAX_TRIP_DAYS)) {
+      throw new Error(`Day must be a whole number from 1 to ${MAX_TRIP_DAYS}.`);
     }
     current.day = patch.day;
   }
