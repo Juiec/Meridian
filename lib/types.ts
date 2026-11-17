@@ -33,6 +33,7 @@ export type SessionRecord = {
   id: string;
   title: string;
   purpose: "chat" | "travel";
+  endpointId: string;
   model: string;
   systemPrompt: string;
   skillsIndexHash: string;
@@ -47,6 +48,7 @@ export type SessionRecord = {
 export type SessionSummary = {
   id: string;
   title: string;
+  endpointId: string;
   model: string;
   createdAt: number;
   updatedAt: number;
@@ -56,6 +58,18 @@ export type SessionSummary = {
 };
 
 export type PublicSettings = {
+  endpointId: string;
+  baseUrl: string;
+  model: string;
+  apiKeySet: boolean;
+  apiKeyHint: string | null;
+  models: string[];
+  endpoints: PublicEndpoint[];
+};
+
+export type PublicEndpoint = {
+  id: string;
+  name: string;
   baseUrl: string;
   model: string;
   apiKeySet: boolean;
@@ -84,6 +98,7 @@ export type MemoryView = {
 
 export type HealthResult = {
   ok: boolean;
+  endpointId: string;
   baseUrl: string;
   model: string;
   latencyMs: number | null;

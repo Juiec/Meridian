@@ -26,7 +26,7 @@ Open [http://127.0.0.1:43123](http://127.0.0.1:43123).
 
 1. In LM Studio, load a model and start the local server (default port **1234**). Enable the OpenAI-compatible endpoint. Tool calling has to be supported by the model you loaded.
 2. Join the machine to your tailnet. MagicDNS gives it a name like `studio.tailnet-name.ts.net`.
-3. In Meridian, open **LM Studio** and set the base URL:
+3. In Meridian, open **Settings** and set the base URL:
 
 ```text
 http://studio.tailnet-name.ts.net:1234/v1
@@ -34,7 +34,9 @@ http://studio.tailnet-name.ts.net:1234/v1
 
 Use `https` if you terminate TLS in front of LM Studio. If you leave the path off (`http://host:1234`), Meridian appends `/v1`. Put an API key in the key field only when the server expects `Authorization: Bearer …`. The key is written to `data/settings.json` on the server and is not returned to the browser.
 
-4. **Check connection**. The app calls `GET /v1/models` from the Next.js process and lists what LM Studio reports. Pick a model id and save. New sessions copy that id; the header on a chat can override it for that session only.
+4. **Save & test connection**. The app calls `GET /v1/models` from the Next.js process and lists what the endpoint reports. Pick a default model id.
+
+Settings can hold up to 16 named endpoints, each with its own base URL, key, and model list. Choose which endpoint new chats should use; existing chats keep their endpoint and model, and the chat header can switch either one for that session.
 
 The same values can come from the environment. A saved settings file wins when the field is present.
 
@@ -53,6 +55,7 @@ This environment does not need Tailscale installed. Set the URL to wherever LM S
 - Before answering the first message in a new chat, Meridian asks the configured model for a concise, high-level chat title. If title generation fails, the chat continues and shows the naming error.
 - **Stop** aborts the LM Studio request. Partial text is kept, a “Generation stopped.” note is stored, and unrun tool calls are closed with an error so the next turn stays valid. **Retry** drops the last assistant turn and runs the same user message again.
 - The header model control lists ids from the last successful `GET /v1/models`. If LM Studio is unreachable, that list stays available and a banner says the server is offline. You can still type an id before the first successful check.
+- The sidebar’s **Image Studio** can generate batches with `gpt-image-2`, choose a preset or custom canvas size, and edit an uploaded PNG/JPEG/WebP. Its OpenAI key is stored in this browser’s local storage (not cookies or the Meridian settings file) and sent only with image requests.
 - Attach text, markdown, code, or a PNG/JPEG/GIF/WebP image. Text is stored with the message and sent to the model as part of the turn. Images are sent as OpenAI-style `image_url` parts when the loaded model supports vision. Files named like `.env`, keys, or pems are refused, and a file that is mostly `KEY=value` lines is refused too.
 - Sessions can be renamed, pinned, archived, searched (title or transcript), exported as Markdown or JSON, and imported from a Meridian JSON export. Deleting a chat does not touch memory. SQLite lives at `data/meridian.sqlite`. Renaming updates the chat header immediately.
 - `/name` at the start of a message loads that skill for the model. The transcript stores what you typed. Up to five leading skill tokens are honored. The older `/skill:name` form still works.

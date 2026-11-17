@@ -5,13 +5,15 @@ import { listModels } from "@/lib/lmstudio";
 import { getSettings, modelCatalog, rememberModels } from "@/lib/settings";
 import type { HealthResult } from "@/lib/types";
 
-export async function GET() {
+export async function GET(request: Request) {
   await connection();
-  const settings = getSettings();
-  const cached = modelCatalog();
+  const endpointId = new URL(request.url).searchParams.get("endpoint") ?? undefined;
+  const settings = getSettings(endpointId);
+  const cached = modelCatalog(settings.endpointId);
   if (!settings.baseUrl) {
     const empty: HealthResult = {
       ok: false,
+      endpointId: settings.endpointId,
       baseUrl: "",
       model: settings.model,
       latencyMs: null,
@@ -27,9 +29,10 @@ export async function GET() {
       apiKey: settings.apiKey || undefined,
       signal: AbortSignal.timeout(8000),
     });
-    rememberModels(models);
+    rememberModels(models, settings.endpointId);
     const result: HealthResult = {
       ok: true,
+      endpointId: settings.endpointId,
       baseUrl: settings.baseUrl,
       model: settings.model,
       latencyMs: Date.now() - started,
@@ -39,6 +42,7 @@ export async function GET() {
   } catch (err) {
     const result: HealthResult = {
       ok: false,
+      endpointId: settings.endpointId,
       baseUrl: settings.baseUrl,
       model: settings.model,
       latencyMs: Date.now() - started,

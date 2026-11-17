@@ -40,7 +40,7 @@ type AppState = {
   refreshMemory: () => Promise<void>;
   health: HealthResult | null;
   healthChecking: boolean;
-  checkHealth: () => Promise<void>;
+  checkHealth: (endpointId?: string) => Promise<void>;
   composerSeed: string | null;
   queueComposer: (text: string | null) => void;
 };
@@ -115,17 +115,25 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     setMemory(await readJson<MemoryView>(await fetch("/api/memory")));
   }, []);
 
-  const checkHealth = useCallback(async () => {
+  const checkHealth = useCallback(async (endpointId?: string) => {
     setHealthChecking(true);
     try {
-      const result = await readJson<HealthResult>(await fetch("/api/health"));
+      const path = endpointId ? `/api/health?endpoint=${encodeURIComponent(endpointId)}` : "/api/health";
+      const result = await readJson<HealthResult>(await fetch(path));
       setHealth(result);
       if (result.models.length > 0) {
-        setSettings((current) => (current ? { ...current, models: result.models } : current));
+        setSettings((current) => current ? {
+          ...current,
+          models: current.endpointId === result.endpointId ? result.models : current.models,
+          endpoints: current.endpoints.map((endpoint) =>
+            endpoint.id === result.endpointId ? { ...endpoint, models: result.models } : endpoint,
+          ),
+        } : current);
       }
     } catch (err) {
       setHealth({
         ok: false,
+        endpointId: endpointId ?? "",
         baseUrl: "",
         model: "",
         latencyMs: null,

@@ -241,7 +241,7 @@ export async function runTurn(input: {
 
   const session = getSession(input.sessionId);
   if (!session) throw new Error("Session not found.");
-  const settings = getSettings();
+  const settings = getSettings(session.endpointId || "default");
   if (!settings.baseUrl) {
     throw new Error("Set LM_STUDIO_BASE_URL or save a base URL in Settings.");
   }

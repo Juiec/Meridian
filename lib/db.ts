@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
   purpose TEXT NOT NULL DEFAULT 'chat',
+  endpoint_id TEXT NOT NULL DEFAULT '',
   model TEXT NOT NULL DEFAULT '',
   system_prompt TEXT NOT NULL,
   skills_index_hash TEXT NOT NULL DEFAULT '',
@@ -56,6 +57,12 @@ function migrate(database: DatabaseSync) {
   }
   if (sessions.size > 0 && !sessions.has("purpose")) {
     database.exec("ALTER TABLE sessions ADD COLUMN purpose TEXT NOT NULL DEFAULT 'chat'");
+  }
+  if (sessions.size > 0 && !sessions.has("endpoint_id")) {
+    database.exec("ALTER TABLE sessions ADD COLUMN endpoint_id TEXT NOT NULL DEFAULT ''");
+  }
+  if (sessions.size > 0) {
+    database.exec("UPDATE sessions SET endpoint_id = 'default' WHERE endpoint_id = ''");
   }
   const messages = columnNames(database, "messages");
   if (messages.size > 0 && !messages.has("attachments")) {

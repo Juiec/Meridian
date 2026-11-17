@@ -56,6 +56,7 @@ export function ChatScreen({
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [modelDraft, setModelDraft] = useState("");
   const [modelFor, setModelFor] = useState<string | null>(null);
+  const [endpointDraft, setEndpointDraft] = useState("");
   const abortRef = useRef<AbortController | null>(null);
   const runFor = useRef<string | null>(null);
   const localId = useRef(0);
@@ -82,6 +83,7 @@ export function ChatScreen({
       setDetail(data.session);
       setMessages(data.messages);
       setModelDraft(data.session.model);
+      setEndpointDraft(data.session.endpointId);
     } catch (err) {
       setThreadError(err instanceof Error ? err.message : "Could not open the session.");
     }
@@ -98,6 +100,8 @@ export function ChatScreen({
         setThreadError(null);
         setDetail(data.session);
         setMessages(data.messages);
+        setModelDraft(data.session.model);
+        setEndpointDraft(data.session.endpointId);
       } catch (err) {
         if (ac.signal.aborted) return;
         setThreadError(err instanceof Error ? err.message : "Could not open the session.");
@@ -306,22 +310,24 @@ export function ChatScreen({
     URL.revokeObjectURL(url);
   }
 
-  async function saveModel(nextModel?: string) {
+  async function saveModel(nextModel?: string, nextEndpointId?: string) {
     if (!detail) return;
     const model = (nextModel ?? modelDraft).trim();
-    if (model === detail.model) return;
+    const endpointId = nextEndpointId ?? endpointDraft ?? detail.endpointId;
+    if (model === detail.model && endpointId === detail.endpointId) return;
     try {
       await readJson(
         await fetch(`/api/sessions/${detail.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model }),
+          body: JSON.stringify({ model, endpointId }),
         }),
       );
-      setDetail({ ...detail, model });
+      setDetail({ ...detail, model, endpointId });
+      setEndpointDraft(endpointId);
       await refreshSessions();
     } catch (err) {
-      setStreamError(err instanceof Error ? err.message : "Could not change the model.");
+      setStreamError(err instanceof Error ? err.message : "Could not change the endpoint or model.");
     }
   }
 
@@ -339,17 +345,27 @@ export function ChatScreen({
   if (threadDetail && modelFor !== threadDetail.id) {
     setModelFor(threadDetail.id);
     setModelDraft(threadDetail.model);
+    setEndpointDraft(threadDetail.endpointId);
   }
 
-  const modelChoices = [...new Set([...(settings?.models ?? []), ...(health?.models ?? [])])].filter(Boolean).sort((a, b) => a.localeCompare(b));
+  const preferredEndpointId =
+    threadDetail?.endpointId ||
+    endpointDraft ||
+    (settings?.endpoints.some((endpoint) => endpoint.id === "default") ? "default" : settings?.endpointId) ||
+    "";
+  const selectedEndpoint =
+    settings?.endpoints.find((endpoint) => endpoint.id === preferredEndpointId) ??
+    settings?.endpoints.find((endpoint) => endpoint.id === settings.endpointId);
+  const selectedEndpointId = selectedEndpoint?.id ?? preferredEndpointId;
+  const modelChoices = selectedEndpoint?.models ?? settings?.models ?? [];
   const canRetry = threadMessages.some((message) => message.role === "user");
-  const offline = Boolean(settings?.baseUrl) && health !== null && !health.ok;
+  const offline = Boolean(selectedEndpoint?.baseUrl) && health?.endpointId === selectedEndpointId && !health.ok;
 
   const disabledReason = !settings
     ? null
-    : !settings.baseUrl
-      ? "Set the LM Studio URL in settings before sending."
-      : !(threadDetail?.model || settings.model || modelDraft)
+    : !selectedEndpoint?.baseUrl
+      ? "Set this endpoint’s URL in settings before sending."
+      : !(threadDetail?.model || selectedEndpoint.model || modelDraft)
         ? "Set a model id before sending."
         : null;
 
@@ -382,13 +398,39 @@ export function ChatScreen({
           ) : null}
           {!embedded ? (
             <>
+              {(settings?.endpoints.length ?? 0) > 1 ? (
+                <label className="flex items-center gap-1.5">
+                  <span className="hidden text-[11px] tracking-wide text-muted-foreground uppercase sm:inline">Host</span>
+                  <select
+                    aria-label="Endpoint for this session"
+                    className="h-8 max-w-36 rounded-lg border border-input bg-background px-2 text-xs md:max-w-48"
+                    value={selectedEndpointId}
+                    disabled={!threadDetail || running}
+                    onChange={(event) => {
+                      const nextEndpointId = event.target.value;
+                      const nextEndpoint = settings?.endpoints.find((endpoint) => endpoint.id === nextEndpointId);
+                      const nextModel =
+                        nextEndpoint?.models.includes(modelDraft)
+                          ? modelDraft
+                          : nextEndpoint?.model || nextEndpoint?.models[0] || "";
+                      setEndpointDraft(nextEndpointId);
+                      setModelDraft(nextModel);
+                      void saveModel(nextModel, nextEndpointId);
+                    }}
+                  >
+                    {settings?.endpoints.map((endpoint) => (
+                      <option key={endpoint.id} value={endpoint.id}>{endpoint.name}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
               <label className="flex min-w-0 items-center gap-2">
                 <span className="hidden text-[11px] tracking-wide text-muted-foreground uppercase sm:inline">Model</span>
                 {modelChoices.length > 0 ? (
                   <select
                     aria-label="Model for this session"
                     className="h-8 max-w-40 rounded-lg border border-input bg-background px-2 text-xs md:max-w-56"
-                    value={modelDraft || settings?.model || ""}
+                    value={modelDraft || threadDetail?.model || selectedEndpoint?.model || ""}
                     disabled={!threadDetail || running}
                     onChange={(event) => {
                       setModelDraft(event.target.value);
@@ -407,7 +449,7 @@ export function ChatScreen({
                     value={modelDraft}
                     onChange={(event) => setModelDraft(event.target.value)}
                     onBlur={() => void saveModel()}
-                    placeholder={settings?.model || "model id"}
+                    placeholder={selectedEndpoint?.model || "model id"}
                     aria-label="Model id for this session"
                     className="w-32 md:w-56"
                     disabled={!threadDetail || running}

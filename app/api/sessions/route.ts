@@ -20,7 +20,8 @@ export async function POST(request: Request) {
   if (body instanceof Response) return body;
   try {
     const model = typeof body.model === "string" ? body.model : undefined;
-    const session = createSession(model);
+    const endpointId = typeof body.endpointId === "string" ? body.endpointId : undefined;
+    const session = createSession(model, "chat", endpointId);
     return Response.json({ session: toSummary(session) }, { status: 201 });
   } catch (err) {
     return caught(err, 400);

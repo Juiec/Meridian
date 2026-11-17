@@ -10,6 +10,7 @@ type SessionRow = {
   id: string;
   title: string;
   purpose: "chat" | "travel";
+  endpoint_id: string;
   model: string;
   system_prompt: string;
   skills_index_hash: string;
@@ -45,6 +46,7 @@ function mapSession(row: SessionRow): SessionRecord {
     id: row.id,
     title: row.title,
     purpose: row.purpose,
+    endpointId: row.endpoint_id,
     model: row.model,
     systemPrompt: row.system_prompt,
     skillsIndexHash: row.skills_index_hash,
@@ -86,6 +88,7 @@ export function toSummary(session: SessionRecord): SessionSummary {
   return {
     id: session.id,
     title: session.title,
+    endpointId: session.endpointId,
     model: session.model,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
@@ -95,7 +98,7 @@ export function toSummary(session: SessionRecord): SessionSummary {
   };
 }
 
-const SESSION_COLUMNS = `id, title, purpose, model, system_prompt, skills_index_hash, compacted_summary,
+const SESSION_COLUMNS = `id, title, purpose, endpoint_id, model, system_prompt, skills_index_hash, compacted_summary,
               compacted_until_seq, pinned, archived, created_at, updated_at`;
 
 function likeTerm(query: string): string {
@@ -152,8 +155,12 @@ export function visibleMessages(session: SessionRecord, messages = listMessages(
   return messages.filter((message) => message.seq > session.compactedUntilSeq!);
 }
 
-export function createSession(model?: string, purpose: SessionRecord["purpose"] = "chat"): SessionRecord {
-  const settings = getSettings();
+export function createSession(
+  model?: string,
+  purpose: SessionRecord["purpose"] = "chat",
+  endpointId?: string,
+): SessionRecord {
+  const settings = getSettings(endpointId);
   const chosen = (model ?? settings.model).trim();
   const { skills } = discoverSkills();
   const id = crypto.randomUUID();
@@ -169,10 +176,10 @@ export function createSession(model?: string, purpose: SessionRecord["purpose"] 
   db()
     .prepare(
       `INSERT INTO sessions
-        (id, title, purpose, model, system_prompt, skills_index_hash, compacted_summary, compacted_until_seq, created_at, updated_at)
-       VALUES (?, 'New session', ?, ?, ?, ?, NULL, NULL, ?, ?)`,
+        (id, title, purpose, endpoint_id, model, system_prompt, skills_index_hash, compacted_summary, compacted_until_seq, created_at, updated_at)
+       VALUES (?, 'New session', ?, ?, ?, ?, ?, NULL, NULL, ?, ?)`,
     )
-    .run(id, purpose, chosen, assembled.prompt, assembled.skillsIndexHash, now, now);
+    .run(id, purpose, settings.endpointId, chosen, assembled.prompt, assembled.skillsIndexHash, now, now);
   const session = getSession(id);
   if (!session) throw new Error("Session was not saved.");
   return session;
@@ -191,6 +198,7 @@ export function updateSession(
   id: string,
   patch: Partial<{
     title: string;
+    endpointId: string;
     model: string;
     skillsIndexHash: string;
     compactedSummary: string | null;
@@ -204,6 +212,7 @@ export function updateSession(
   if (!current) return null;
   const next = {
     title: patch.title ?? current.title,
+    endpointId: patch.endpointId ?? current.endpointId,
     model: patch.model ?? current.model,
     skillsIndexHash: patch.skillsIndexHash ?? current.skillsIndexHash,
     compactedSummary:
@@ -218,12 +227,13 @@ export function updateSession(
   db()
     .prepare(
       `UPDATE sessions
-       SET title = ?, model = ?, skills_index_hash = ?, compacted_summary = ?,
+       SET title = ?, endpoint_id = ?, model = ?, skills_index_hash = ?, compacted_summary = ?,
            compacted_until_seq = ?, system_prompt = ?, pinned = ?, archived = ?, updated_at = ?
        WHERE id = ?`,
     )
     .run(
       next.title,
+      next.endpointId,
       next.model,
       next.skillsIndexHash,
       next.compactedSummary,
@@ -335,6 +345,7 @@ export type SessionExport = {
   exportedAt: number;
   session: {
     title: string;
+    endpointId: string;
     model: string;
     pinned: boolean;
     archived: boolean;
@@ -359,6 +370,7 @@ export function exportSession(id: string): SessionExport | null {
     exportedAt: Date.now(),
     session: {
       title: session.title,
+      endpointId: session.endpointId,
       model: session.model,
       pinned: session.pinned,
       archived: false,
@@ -384,6 +396,7 @@ export function importSession(payload: unknown): SessionRecord {
   }
   const body = root.session as {
     title?: unknown;
+    endpointId?: unknown;
     model?: unknown;
     pinned?: unknown;
     compactedSummary?: unknown;
@@ -391,11 +404,13 @@ export function importSession(payload: unknown): SessionRecord {
   };
   const title = typeof body.title === "string" && body.title.trim() ? body.title.trim().slice(0, 80) : "Imported session";
   const model = typeof body.model === "string" ? body.model.trim() : "";
+  const endpointId = typeof body.endpointId === "string" ? body.endpointId.trim() : undefined;
   if (!Array.isArray(body.messages)) throw new Error("Export is missing messages.");
   if (body.messages.length > 2000) throw new Error("Export has too many messages.");
-  const created = createSession(model || undefined);
+  const created = createSession(model || undefined, "chat", endpointId);
   updateSession(created.id, {
     title,
+    endpointId: created.endpointId,
     model: model || created.model,
     pinned: body.pinned === true,
   });

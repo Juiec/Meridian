@@ -31,7 +31,7 @@ export async function POST(request: Request) {
 
   const session = getSession(sessionId);
   if (!session) return jsonError("Session not found.", 404);
-  const settings = getSettings();
+  const settings = getSettings(session.endpointId || "default");
   if (!settings.baseUrl) {
     return jsonError("Set LM_STUDIO_BASE_URL or save a base URL in Settings.");
   }
