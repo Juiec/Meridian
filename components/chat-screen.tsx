@@ -1,15 +1,18 @@
 "use client";
 
 import { Download, PanelRight } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { useAppState } from "@/components/app-state";
 import { readJson } from "@/components/client-api";
 import { Composer, type ComposerAttachment, type ComposerTool } from "@/components/composer";
 import { Inspector } from "@/components/inspector";
-import { useOpenSidebar } from "@/components/shell";
+import { QuestionCard } from "@/components/question-card";
+import { useOpenSidebar } from "@/components/shell-context";
 import { SidebarToggle } from "@/components/sidebar";
 import { Transcript, type LivePart } from "@/components/transcript";
+import type { ToolPart } from "@/lib/group-messages";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { askAnswerPayload, findPendingQuestion } from "@/lib/ask-user";
@@ -60,9 +63,12 @@ if (typeof window !== "undefined") deskCollapsedValue = readStoredDesk();
 export function ChatScreen({
   embedded = false,
   embeddedSessionId,
+  companion = false,
 }: {
   embedded?: boolean;
   embeddedSessionId?: string | null;
+  /** Chat column kept beside Image Studio or Travel Planner. */
+  companion?: boolean;
 } = {}) {
   const openSidebar = useOpenSidebar();
   const {
@@ -93,6 +99,7 @@ export function ChatScreen({
   const [streamError, setStreamError] = useState<string | null>(null);
   const [live, setLive] = useState<{ parts: LivePart[]; status: string } | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [streamedQuestion, setStreamedQuestion] = useState<ToolPart | null>(null);
   const deskCollapsed = useSyncExternalStore(subscribeDesk, getDeskCollapsed, () => false);
   const [toolCatalog, setToolCatalog] = useState<ComposerTool[]>([]);
   const [modelDraft, setModelDraft] = useState("");
@@ -208,6 +215,13 @@ export function ChatScreen({
       });
     } else if (event.type === "question") {
       setStatus("Waiting for your answer");
+      setStreamedQuestion({
+        kind: "tool",
+        id: event.toolCallId,
+        name: "ask_user",
+        arguments: JSON.stringify({ prompt: event.prompt, options: event.options }),
+        awaitingUser: true,
+      });
       setLive((current) => {
         const parts = (current?.parts ?? []).map((part) =>
           part.kind === "tool" && part.id === event.toolCallId
@@ -312,6 +326,7 @@ export function ChatScreen({
       setStreamingId(null);
       setLive(null);
       setRunning(false);
+      if (!waiting) setStreamedQuestion(null);
       if (!stopped) setStatus(waiting ? "Waiting for your answer" : null);
     }
   }
@@ -523,6 +538,17 @@ export function ChatScreen({
   const headerTitle = headerSource && headerSource !== "New session" ? headerSource : "Meridian";
   const threadMessages = ownsThread ? messages : [];
   const pendingQuestion = ownsThread ? findPendingQuestion(threadMessages) : null;
+  const pendingId = pendingQuestion?.call.id ?? null;
+  if (pendingId && streamedQuestion) setStreamedQuestion(null);
+  const pinnedQuestion: ToolPart | null = pendingQuestion
+    ? {
+        kind: "tool",
+        id: pendingQuestion.call.id,
+        name: "ask_user",
+        arguments: pendingQuestion.call.arguments,
+        awaitingUser: true,
+      }
+    : streamedQuestion;
   if (threadDetail && modelFor !== threadDetail.id) {
     setModelFor(threadDetail.id);
     setModelDraft(threadDetail.model);
@@ -554,7 +580,13 @@ export function ChatScreen({
     <div className="flex min-h-0 flex-1">
       <section className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2 md:px-4">
-          {embedded ? null : <SidebarToggle onOpen={openSidebar} />}
+          {embedded ? null : companion ? (
+            <Link href="/" className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+              All chats
+            </Link>
+          ) : (
+            <SidebarToggle onOpen={openSidebar} />
+          )}
           <div className="min-w-0 flex-1">
             <p className="truncate font-display text-xl leading-none">
               {embedded ? "Trip conversation" : headerTitle}
@@ -567,7 +599,7 @@ export function ChatScreen({
                   : "Sessions, skills, and a short memory"}
             </p>
           </div>
-          {threadDetail && !embedded ? (
+          {threadDetail && !embedded && !companion ? (
             <div className="flex items-center gap-1">
               <Button type="button" variant="ghost" size="icon-sm" aria-label="Export markdown" onClick={() => void download("md", headerTitle)}>
                 <Download />
@@ -577,7 +609,7 @@ export function ChatScreen({
               </Button>
             </div>
           ) : null}
-          {!embedded ? (
+          {!embedded && !companion ? (
             <>
               {(settings?.endpoints.length ?? 0) > 1 ? (
                 <label className="flex items-center gap-1.5">
@@ -637,16 +669,18 @@ export function ChatScreen({
                   />
                 )}
               </label>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Open skills and memory"
-                onClick={() => setInspectorOpen(true)}
-                className="xl:hidden"
-              >
-                <PanelRight />
-              </Button>
+              {companion ? null : (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Open skills and memory"
+                  onClick={() => setInspectorOpen(true)}
+                  className="xl:hidden"
+                >
+                  <PanelRight />
+                </Button>
+              )}
             </>
           ) : null}
         </header>
@@ -656,14 +690,20 @@ export function ChatScreen({
             {health?.stale ? " The last model list is still available." : ""}
           </p>
         ) : null}
+        {pinnedQuestion ? (
+          <div className="border-b border-border bg-background px-4 py-3 md:px-6">
+            <div className="mx-auto w-full max-w-3xl">
+              <QuestionCard part={pinnedQuestion} onAnswer={!running ? chooseDirection : undefined} />
+            </div>
+          </div>
+        ) : null}
         <Transcript
           messages={threadMessages}
           live={ownsThread ? live : null}
           compactedSummary={threadDetail?.compactedSummary ?? null}
           loading={Boolean(activeSessionId) && !ownsThread && !threadError}
           error={threadError}
-          pendingToolCallId={pendingQuestion?.call.id ?? null}
-          onAnswer={pendingQuestion && !running ? chooseDirection : undefined}
+          pendingToolCallId={pendingId}
           onRetry={() => {
             if (activeSessionId) void load(activeSessionId);
           }}
@@ -700,13 +740,13 @@ export function ChatScreen({
           running={running}
           status={status}
           disabledReason={disabledReason}
-          awaitingQuestion={Boolean(pendingQuestion)}
+          awaitingQuestion={Boolean(pinnedQuestion)}
           chatMode={detail?.chatMode ?? "agent"}
           skills={skills}
           tools={toolCatalog}
         />
       </section>
-      {!embedded ? (
+      {!embedded && !companion ? (
         <Inspector
           open={inspectorOpen}
           collapsed={deskCollapsed}
@@ -719,7 +759,7 @@ export function ChatScreen({
           }}
         />
       ) : null}
-      {!embedded && inspectorOpen ? (
+      {!embedded && !companion && inspectorOpen ? (
         <button
           type="button"
           aria-label="Close skills and memory"
