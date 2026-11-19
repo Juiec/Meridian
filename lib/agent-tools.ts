@@ -1,3 +1,4 @@
+import { modeAllowsTool, modeRefusal } from "@/lib/chat-mode";
 import { executeCustomTool, listCustomTools } from "@/lib/custom-tools";
 import { messageOf } from "@/lib/errors";
 import { listMcpServers } from "@/lib/mcp-config";
@@ -56,6 +57,10 @@ export async function executeAgentTool(
   routes: Record<string, ToolRoute>,
   context: ToolContext = {},
 ): Promise<Record<string, unknown>> {
+  const mode = context.mode ?? "agent";
+  if (!modeAllowsTool(mode, name)) {
+    return { ok: false, error: modeRefusal(mode, name) };
+  }
   const route = routes[name];
   try {
     if (!route) return await executeTool(name, rawArgs, context);

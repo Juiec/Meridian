@@ -5,7 +5,8 @@ import { readEntries } from "@/lib/memory";
 import { assembleSystemPrompt } from "@/lib/prompt";
 import { getSettings } from "@/lib/settings";
 import { discoverSkills } from "@/lib/skills";
-import type { Attachment, SessionRecord, SessionSummary, StoredMessage, ToolCallRecord } from "@/lib/types";
+import { isChatMode } from "@/lib/chat-mode";
+import type { Attachment, ChatMode, SessionRecord, SessionSummary, StoredMessage, ToolCallRecord } from "@/lib/types";
 
 type SessionRow = {
   id: string;
@@ -19,6 +20,7 @@ type SessionRow = {
   compacted_until_seq: number | bigint | null;
   pinned: number | bigint | null;
   archived: number | bigint | null;
+  chat_mode: string | null;
   created_at: number | bigint;
   updated_at: number | bigint;
 };
@@ -55,6 +57,7 @@ function mapSession(row: SessionRow): SessionRecord {
     compactedUntilSeq: num(row.compacted_until_seq),
     pinned: Number(row.pinned ?? 0) === 1,
     archived: Number(row.archived ?? 0) === 1,
+    chatMode: isChatMode(row.chat_mode) ? row.chat_mode : "agent",
     createdAt: num(row.created_at) ?? 0,
     updatedAt: num(row.updated_at) ?? 0,
   };
@@ -100,7 +103,7 @@ export function toSummary(session: SessionRecord): SessionSummary {
 }
 
 const SESSION_COLUMNS = `id, title, purpose, endpoint_id, model, system_prompt, skills_index_hash, compacted_summary,
-              compacted_until_seq, pinned, archived, created_at, updated_at`;
+              compacted_until_seq, pinned, archived, chat_mode, created_at, updated_at`;
 
 function likeTerm(query: string): string {
   return `%${query.replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
@@ -207,6 +210,7 @@ export function updateSession(
     systemPrompt: string;
     pinned: boolean;
     archived: boolean;
+    chatMode: ChatMode;
   }>,
 ): SessionRecord | null {
   const current = getSession(id);
@@ -223,13 +227,14 @@ export function updateSession(
     systemPrompt: patch.systemPrompt ?? current.systemPrompt,
     pinned: patch.pinned ?? current.pinned,
     archived: patch.archived ?? current.archived,
+    chatMode: patch.chatMode ?? current.chatMode,
     updatedAt: Date.now(),
   };
   db()
     .prepare(
       `UPDATE sessions
        SET title = ?, endpoint_id = ?, model = ?, skills_index_hash = ?, compacted_summary = ?,
-           compacted_until_seq = ?, system_prompt = ?, pinned = ?, archived = ?, updated_at = ?
+           compacted_until_seq = ?, system_prompt = ?, pinned = ?, archived = ?, chat_mode = ?, updated_at = ?
        WHERE id = ?`,
     )
     .run(
@@ -242,6 +247,7 @@ export function updateSession(
       next.systemPrompt,
       next.pinned ? 1 : 0,
       next.archived ? 1 : 0,
+      next.chatMode,
       next.updatedAt,
       id,
     );

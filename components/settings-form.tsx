@@ -305,8 +305,9 @@ export function SettingsForm() {
           </form>
 
           <p className="mt-6 text-xs leading-5 text-muted-foreground">
-            Keys are stored in <span className="font-mono">data/settings.json</span> on this machine (a local, unencrypted file that is gitignored).
-            They are only sent from the server to the endpoint you choose; raw keys are not saved in browser cookies or returned to the browser.
+            Keys are stored in <span className="font-mono">data/secrets/endpoints.json</span> (mode 0600).
+            Names, URLs, and model ids are stored in <span className="font-mono">data/endpoints.json</span>.
+            Both stay on this machine and are gitignored. Raw keys are sent only to the endpoint you choose, and are not saved in browser cookies or returned to the browser.
             Environment defaults remain available as the initial endpoint: <span className="font-mono">LM_STUDIO_BASE_URL</span>,
             {" "}<span className="font-mono">LM_STUDIO_API_KEY</span>, and <span className="font-mono">MODEL</span>.
           </p>

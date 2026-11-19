@@ -8,6 +8,7 @@ import { streamCompletion, type ApiMessage, type CompletionDelta, type Completio
 import { readEntries } from "@/lib/memory";
 import { assembleSystemPrompt, skillsChangedNote } from "@/lib/prompt";
 import { getSettings } from "@/lib/settings";
+import { filterToolsForMode, modeInstructions } from "@/lib/chat-mode";
 import { deriveTitle, parseSkillCommand } from "@/lib/skill-command";
 import { discoverSkills, readSkillFile, skillsIndexHash } from "@/lib/skills";
 import {
@@ -39,6 +40,12 @@ async function* defaultComplete(request: CompletionRequest): AsyncGenerator<Comp
 function expandUserContent(content: string): string {
   const parsed = parseSkillCommand(content);
   if (!parsed) return content;
+  const request =
+    parsed.rest.trim() ||
+    (parsed.skills.length > 0
+      ? "The user invoked this skill without extra instructions. Follow it, and ask one focused question if you cannot proceed."
+      : `The user switched to ${parsed.mode} mode.`);
+  if (parsed.skills.length === 0) return request;
   const blocks = parsed.skills.map((name) => {
     const loaded = readSkillFile(name);
     if (!loaded.ok) {
@@ -46,9 +53,6 @@ function expandUserContent(content: string): string {
     }
     return `<skill name="${name}">\n${loaded.content}\n</skill>`;
   });
-  const request =
-    parsed.rest.trim() ||
-    "The user invoked this skill without extra instructions. Follow it, and ask one focused question if you cannot proceed.";
   return `${blocks.join("\n\n")}\n\nUser request:\n${request}`;
 }
 
@@ -302,6 +306,11 @@ export async function runTurn(input: {
     updateSession(input.sessionId, { skillsIndexHash: hash });
   }
 
+  const requestedMode = parseSkillCommand(content)?.mode;
+  if (requestedMode && requestedMode !== session.chatMode) {
+    updateSession(input.sessionId, { chatMode: requestedMode });
+  }
+
   if (input.replay) {
     const existing = lastUserMessage(input.sessionId);
     if (!existing) throw new Error("Nothing to retry.");
@@ -374,7 +383,7 @@ export async function runTurn(input: {
     const current = getSession(input.sessionId);
     if (!current) throw new Error("Session not found.");
     const messages: ApiMessage[] = [
-      { role: "system", content: current.systemPrompt },
+      { role: "system", content: `${current.systemPrompt}\n\n${modeInstructions(current.chatMode)}` },
       ...buildApiMessages(input.sessionId),
     ];
     if (forceText) {
@@ -384,15 +393,15 @@ export async function runTurn(input: {
       });
     }
 
-    let definitions = TOOLS;
+    let definitions = filterToolsForMode(TOOLS, current.chatMode);
     let routes: Record<string, ToolRoute> = {};
     if (!forceText) {
       try {
         const bundle = await prepareAgentTools();
-        definitions = bundle.definitions;
+        definitions = filterToolsForMode(bundle.definitions, current.chatMode);
         routes = bundle.routes;
       } catch {
-        definitions = TOOLS;
+        definitions = filterToolsForMode(TOOLS, current.chatMode);
         routes = {};
       }
     }
@@ -519,6 +528,7 @@ export async function runTurn(input: {
       const result = await executeAgentTool(call.name, call.arguments, routes, {
         sessionId: input.sessionId,
         toolCallId: call.id,
+        mode: current.chatMode,
       });
       const payload = JSON.stringify(result, null, 2);
       insertMessage({

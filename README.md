@@ -25,20 +25,20 @@ Open [http://127.0.0.1:43123](http://127.0.0.1:43123).
 ## Point it at LM Studio over Tailscale
 
 1. In LM Studio, load a model and start the local server (default port **1234**). Enable the OpenAI-compatible endpoint. Tool calling has to be supported by the model you loaded.
-2. Join the machine to your tailnet. MagicDNS gives it a name like `studio.tailnet-name.ts.net`.
+2. Join the LM Studio machine to your tailnet. MagicDNS gives it a name like `studio.tailnet-name.ts.net`. Install steps are under [Install Tailscale](#install-tailscale).
 3. In Meridian, open **Settings** and set the base URL:
 
 ```text
 http://studio.tailnet-name.ts.net:1234/v1
 ```
 
-Use `https` if you terminate TLS in front of LM Studio. If you leave the path off (`http://host:1234`), Meridian appends `/v1`. Put an API key in the key field only when the server expects `Authorization: Bearer …`. The key is written to `data/settings.json` on the server and is not returned to the browser.
+Use `https` if you terminate TLS in front of LM Studio. If you leave the path off (`http://host:1234`), Meridian appends `/v1`. Put an API key in the key field only when the server expects `Authorization: Bearer …`. The profile is written to `data/endpoints.json`. The key is written to `data/secrets/endpoints.json` (mode 0600) and is not returned to the browser.
 
 4. **Save & test connection**. The app calls `GET /v1/models` from the Next.js process and lists what the endpoint reports. Pick a default model id.
 
 Settings can hold up to 16 named endpoints, each with its own base URL, key, and model list. Choose which endpoint new chats should use; existing chats keep their endpoint and model, and the chat header can switch either one for that session.
 
-The same values can come from the environment. A saved settings file wins when the field is present.
+The same values can come from the environment until you save. A saved profile wins. The environment key is not copied into `data/endpoints.json`.
 
 | Variable | Purpose |
 | --- | --- |
@@ -46,7 +46,7 @@ The same values can come from the environment. A saved settings file wins when t
 | `LM_STUDIO_API_KEY` | Optional bearer token |
 | `MODEL` | Default model id |
 
-This environment does not need Tailscale installed. Set the URL to wherever LM Studio is reachable from the machine running `npm run dev`.
+`npm run dev` does not need Tailscale installed. Set the URL to wherever LM Studio is reachable from that process. The Docker stack below joins the tailnet for you.
 
 ## Chat
 
@@ -60,6 +60,7 @@ This environment does not need Tailscale installed. Set the URL to wherever LM S
 - Attach text, markdown, code, or a PNG/JPEG/GIF/WebP image. Text is stored with the message and sent to the model as part of the turn. Images are sent as OpenAI-style `image_url` parts when the loaded model supports vision. Files named like `.env`, keys, or pems are refused, and a file that is mostly `KEY=value` lines is refused too.
 - Sessions can be renamed, pinned, archived, searched (title or transcript), exported as Markdown or JSON, and imported from a Meridian JSON export. Deleting a chat does not touch memory. SQLite lives at `data/meridian.sqlite`. Renaming updates the chat header immediately.
 - `/name` at the start of a message loads that skill for the model. The transcript stores what you typed. Up to five leading skill tokens are honored. The older `/skill:name` form still works.
+- `/ask` or `/ask-mode` switches the session to Ask mode: Meridian answers with read-only tools and will not write memory, generate images, update the trip, or call MCP or custom tools. `/plan` or `/plan-mode` uses those same tools, then stops with a plan instead of carrying it out. `/agent` returns to Agent mode, where every tool is available. The mode stays until another mode command. Typing `/` opens a menu of modes, skills, and tools. The text after `/` is a case-insensitive regular expression; an unfinished pattern is matched literally.
 - When the visible history passes about 18,000 characters and there are more than two turns, older turns are summarized. The transcript shows a compaction note. The full messages stay in SQLite. The summary is what the model sees. Skill index changes are refreshed in existing chats on the next message; compaction also rebuilds the full system prompt from disk.
 
 ## Skills
@@ -90,12 +91,13 @@ Shipped skills:
 | `code-explain` | They pasted code and want it explained, not replaced |
 | `daily-planning` | They want a plan for the day or the next block of work |
 | `prompt-refine` | They want a prompt rewritten for a local model |
+| `cursor-phraser` | They want something added, fixed, or built, phrased as a brief for a Cursor cloud agent |
 | `trip-planning` | They want an outline that uses geocoding, weather, the map, and fare tools |
 | `packing-list` | They want a list shaped by destination and the forecast |
 | `itinerary-day` | They want a day-by-day plan from the pinned map |
 | `travel-research` | They want fares, weather, or entry notes looked up rather than invented |
 
-The desk can create, edit, and delete skills without a restart. A new skill needs a name (`lowercase-words`), a description of 1024 characters or fewer, and a body of 20,000 characters or fewer. Optional references live in `references/` as `notes.md` or `notes.txt`. `disable-model-invocation` hides a skill from the index while `/name` can still load it. Saving or adding a skill file refreshes the index in existing chats on the next message. You can also add a skill by creating `skills/your-name/SKILL.md` on disk. The desk inserts `/your-name` into the composer.
+The desk can create, edit, and delete skills without a restart. A new skill needs a name (`lowercase-words`), a description of 1024 characters or fewer, and a body of 20,000 characters or fewer. Optional references live in `references/` as `notes.md` or `notes.txt`. `disable-model-invocation` hides a skill from the index while `/name` can still load it. Saving or adding a skill file refreshes the index in existing chats on the next message. You can also add a skill by creating `skills/your-name/SKILL.md` on disk. The desk inserts `/your-name` into the composer. Names `ask`, `plan`, and `agent` are reserved for chat modes, so a skill should not use them.
 
 ## Memory
 
@@ -161,6 +163,7 @@ Meridian assumes it is running on your machine, for you. Do not expose port 4312
 - Custom tools may call localhost and private addresses. That is deliberate, so a webhook on your machine works. `fetch_url` still refuses those addresses. Webhook redirects are checked again, metadata addresses such as `169.254.169.254` are blocked, and headers are dropped if a redirect leaves the original host.
 - Do not put secrets in a URL. Put them in environment variables or headers. Those values live under `data/`, which is gitignored, and are not included in API responses.
 - Inside Docker, a stdio command has to exist in the image (or a mounted path). `node scripts/demo-mcp.mjs` works because the image includes Node and this repo. A server on the host is reachable at `http://host.docker.internal:<port>/…`.
+- Compose publishes Meridian on `127.0.0.1:43123` and joins the tailnet through a Tailscale sidecar. Other devices on your tailnet open `http://meridian:43123`. That does not add a login to the app. Anyone allowed to reach that tailnet address can use it.
 
 ## Travel Planner
 
@@ -215,12 +218,37 @@ Built-in tools: `memory`, `skill_view`, `list_skills`, `fetch_url`, `current_tim
 ## Docker
 
 ```bash
+cp .env.example .env
 docker compose up --build
 ```
 
-The app listens on port **43123**. SQLite and settings live in the `meridian-data` volume. `skills/` and `agent/` are mounted from this directory, so desk edits and files you add on the host are the same tree.
+Set `TS_AUTHKEY` in `.env` before that first start. [Install Tailscale](#install-tailscale) is the full procedure.
 
-The container does not join your tailnet. Set `LM_STUDIO_BASE_URL` to a name the container can resolve: a MagicDNS host, or `http://host.docker.internal:1234/v1` when LM Studio is on the machine running Docker. Compose reads a `.env` file in this directory for those variables. Copy `.env.example` to `.env` if you want them set.
+The app listens on port **43123**. SQLite, `data/endpoints.json`, and `data/secrets/endpoints.json` live in the `meridian-data` volume. `skills/` and `agent/` are mounted from this directory, so desk edits and files you add on the host are the same tree. Compose reads `.env` for the bootstrap variables and the auth key. Copy `.env.example` to `.env.local` for `npm run dev`. Saved profiles replace the LM Studio variables.
+
+### Install Tailscale
+
+Install Tailscale as the Compose sidecar. Do not add it to the Meridian `Dockerfile`, and do not install the client on the host just to run this stack. Compose pulls `tailscale/tailscale:stable` and Meridian shares that container's network.
+
+1. Install Docker Engine and the Compose plugin. The host needs `/dev/net/tun`. If it is missing, `sudo modprobe tun`.
+2. In the [tailnet policy](https://login.tailscale.com/admin/acls), allow a tag such as `tag:meridian`.
+3. On the [Keys page](https://login.tailscale.com/admin/settings/keys), generate an auth key. Make it reusable, pre-approved, and non-ephemeral, and assign `tag:meridian` so the node is not owned by your user login. Copy the key when it is shown. It is not shown again.
+4. `cp .env.example .env`, then set `TS_AUTHKEY` to that key. `.env` is gitignored. Leave the key out of the Dockerfile and `docker-compose.yml`.
+5. `docker compose up --build`.
+6. `docker compose exec tailscale tailscale status` should list this node with a `100.x` address. From another device on the tailnet, open `http://meridian:43123`. For a machine that should stay signed in, open the Machines page and disable key expiry on `meridian`.
+
+The sidecar logs in from `TS_AUTHKEY` on first start. `TS_STATE_DIR` points at the `tailscale-state` volume, and `TS_AUTH_ONCE=true` reuses that node on later starts instead of logging in again. `TS_USERSPACE=false` uses the tun device, with `net_admin` and `net_raw`. `TS_ACCEPT_DNS=true` installs MagicDNS in the shared network, so `LM_STUDIO_BASE_URL` can be `http://studio.tailnet-name.ts.net:1234/v1`. `TS_HOSTNAME=meridian` is the name other devices use.
+
+Compose publishes **43123** on `127.0.0.1` only. A server on the Docker host is `http://host.docker.internal:1234/v1`. That name is on the sidecar's hosts file, which Meridian uses because it shares the sidecar network.
+
+`npm run dev` does not start this sidecar. When LM Studio is on another machine and you are not using Compose, install the client on each of those machines instead. On Linux:
+
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
+```
+
+That script is the one on the [download page](https://tailscale.com/download). Other systems use the package listed there. `tailscale status` should show a `100.x` address before you set the MagicDNS base URL.
 
 ## Scripts
 

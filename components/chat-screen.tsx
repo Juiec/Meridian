@@ -5,15 +5,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useAppState } from "@/components/app-state";
 import { readJson } from "@/components/client-api";
-import { Composer, type ComposerAttachment } from "@/components/composer";
+import { Composer, type ComposerAttachment, type ComposerTool } from "@/components/composer";
 import { Inspector } from "@/components/inspector";
 import { useOpenSidebar } from "@/components/shell";
 import { SidebarToggle } from "@/components/sidebar";
 import { Transcript, type LivePart } from "@/components/transcript";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { insertSkillToken } from "@/lib/slash-menu";
 import { readSse } from "@/lib/sse";
 import type { AgentEvent, SessionRecord, StoredMessage } from "@/lib/types";
+import type { ToolsOverview } from "@/lib/tool-types";
 
 type DetailResponse = {
   session: SessionRecord;
@@ -39,6 +41,7 @@ export function ChatScreen({
     refreshMemory,
     composerSeed,
     queueComposer,
+    skills,
   } = useAppState();
   const activeSessionId = embedded ? embeddedSessionId ?? null : selectedSessionId;
   const [focusTick, setFocusTick] = useState(0);
@@ -55,6 +58,7 @@ export function ChatScreen({
   const [streamError, setStreamError] = useState<string | null>(null);
   const [live, setLive] = useState<{ parts: LivePart[]; status: string } | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [toolCatalog, setToolCatalog] = useState<ComposerTool[]>([]);
   const [modelDraft, setModelDraft] = useState("");
   const [modelFor, setModelFor] = useState<string | null>(null);
   const [endpointDraft, setEndpointDraft] = useState("");
@@ -76,6 +80,20 @@ export function ChatScreen({
     if (focusTick === 0) return;
     document.getElementById("composer")?.focus();
   }, [focusTick]);
+
+  useEffect(() => {
+    const ac = new AbortController();
+    void (async () => {
+      try {
+        const data = await readJson<ToolsOverview>(await fetch("/api/tools", { signal: ac.signal }));
+        if (ac.signal.aborted) return;
+        setToolCatalog(data.catalog.map((item) => ({ name: item.name, description: item.description })));
+      } catch {
+        /* Modes and skills still appear in the slash menu. */
+      }
+    })();
+    return () => ac.abort();
+  }, []);
 
   const load = useCallback(async (id: string) => {
     setThreadError(null);
@@ -522,6 +540,9 @@ export function ChatScreen({
           running={running}
           status={status}
           disabledReason={disabledReason}
+          chatMode={detail?.chatMode ?? "agent"}
+          skills={skills}
+          tools={toolCatalog}
         />
       </section>
       {!embedded ? (
@@ -530,10 +551,7 @@ export function ChatScreen({
           onClose={() => setInspectorOpen(false)}
           systemPrompt={threadDetail?.systemPrompt ?? null}
           onInsertSkill={(name) => {
-            setDraft((current) => {
-              const existing = current.match(/^\/(?:skill:)?([a-z0-9]+(?:-[a-z0-9]+)*)\b/i);
-              return existing?.[1].toLowerCase() === name ? current : `/${name} ${current}`;
-            });
+            setDraft((current) => insertSkillToken(current, name));
             setInspectorOpen(false);
           }}
         />
