@@ -46,7 +46,7 @@ The same values can come from the environment until you save. A saved profile wi
 | `LM_STUDIO_API_KEY` | Optional bearer token |
 | `MODEL` | Default model id |
 
-This environment does not need Tailscale installed. Set the URL to wherever LM Studio is reachable from the machine running `npm run dev`.
+`npm run dev` does not need Tailscale installed. Set the URL to wherever LM Studio is reachable from that process. The Docker stack below joins the tailnet for you.
 
 ## Chat
 
@@ -163,6 +163,7 @@ Meridian assumes it is running on your machine, for you. Do not expose port 4312
 - Custom tools may call localhost and private addresses. That is deliberate, so a webhook on your machine works. `fetch_url` still refuses those addresses. Webhook redirects are checked again, metadata addresses such as `169.254.169.254` are blocked, and headers are dropped if a redirect leaves the original host.
 - Do not put secrets in a URL. Put them in environment variables or headers. Those values live under `data/`, which is gitignored, and are not included in API responses.
 - Inside Docker, a stdio command has to exist in the image (or a mounted path). `node scripts/demo-mcp.mjs` works because the image includes Node and this repo. A server on the host is reachable at `http://host.docker.internal:<port>/…`.
+- Compose publishes Meridian on `127.0.0.1:43123` and joins the tailnet through a Tailscale sidecar. Other devices on your tailnet open `http://meridian:43123`. That does not add a login to the app. Anyone allowed to reach that tailnet address can use it.
 
 ## Travel Planner
 
@@ -217,12 +218,17 @@ Built-in tools: `memory`, `skill_view`, `list_skills`, `fetch_url`, `current_tim
 ## Docker
 
 ```bash
+cp .env.example .env
 docker compose up --build
 ```
 
-The app listens on port **43123**. SQLite, `data/endpoints.json`, and `data/secrets/endpoints.json` live in the `meridian-data` volume. `skills/` and `agent/` are mounted from this directory, so desk edits and files you add on the host are the same tree.
+Put a Tailscale auth key in `TS_AUTHKEY` in that `.env` before the first start. In the [admin console](https://login.tailscale.com/admin/settings/keys), generate a reusable, pre-approved key and tag it (for example `tag:meridian`) so the node is not owned by your user login. The tag has to already be allowed in your tailnet policy. Leave the key non-ephemeral. The key stays in `.env`, which is gitignored.
 
-The container does not join your tailnet. Set `LM_STUDIO_BASE_URL` to a name the container can resolve: a MagicDNS host, or `http://host.docker.internal:1234/v1` when LM Studio is on the machine running Docker. Compose reads a `.env` file in this directory for those bootstrap variables. Copy `.env.example` to `.env` for Compose, and to `.env.local` for `npm run dev`. Saved profiles replace them.
+Compose starts `tailscale/tailscale` next to the app. Meridian uses that container's network, so the app image does not install Tailscale. The sidecar logs in from `TS_AUTHKEY`, stores its node identity in the `tailscale-state` volume, and keeps the same machine on later starts (`TS_AUTH_ONCE`). Kernel networking is on (`TS_USERSPACE=false`), which needs `/dev/net/tun`. `TS_ACCEPT_DNS=true` installs MagicDNS in that shared network, so `LM_STUDIO_BASE_URL` can be a name like `http://studio.tailnet-name.ts.net:1234/v1`. A server on the Docker host is still `http://host.docker.internal:1234/v1`. That name is on the sidecar's hosts file, which Meridian uses because it shares the sidecar network.
+
+The app listens on port **43123**. Compose publishes it on `127.0.0.1` only. From another device on your tailnet, open `http://meridian:43123`. Check the node with `docker compose exec tailscale tailscale status`. SQLite, `data/endpoints.json`, and `data/secrets/endpoints.json` live in the `meridian-data` volume. `skills/` and `agent/` are mounted from this directory, so desk edits and files you add on the host are the same tree.
+
+Compose reads `.env` for the bootstrap variables and the auth key. Copy `.env.example` to `.env.local` for `npm run dev`. Saved profiles replace the LM Studio variables. `npm run dev` does not start Tailscale.
 
 ## Scripts
 
