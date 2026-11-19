@@ -25,7 +25,7 @@ Open [http://127.0.0.1:43123](http://127.0.0.1:43123).
 ## Point it at LM Studio over Tailscale
 
 1. In LM Studio, load a model and start the local server (default port **1234**). Enable the OpenAI-compatible endpoint. Tool calling has to be supported by the model you loaded.
-2. Join the machine to your tailnet. MagicDNS gives it a name like `studio.tailnet-name.ts.net`.
+2. Join the LM Studio machine to your tailnet. MagicDNS gives it a name like `studio.tailnet-name.ts.net`. Install steps are under [Install Tailscale](#install-tailscale).
 3. In Meridian, open **Settings** and set the base URL:
 
 ```text
@@ -222,13 +222,33 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Put a Tailscale auth key in `TS_AUTHKEY` in that `.env` before the first start. In the [admin console](https://login.tailscale.com/admin/settings/keys), generate a reusable, pre-approved key and tag it (for example `tag:meridian`) so the node is not owned by your user login. The tag has to already be allowed in your tailnet policy. Leave the key non-ephemeral. The key stays in `.env`, which is gitignored.
+Set `TS_AUTHKEY` in `.env` before that first start. [Install Tailscale](#install-tailscale) is the full procedure.
 
-Compose starts `tailscale/tailscale` next to the app. Meridian uses that container's network, so the app image does not install Tailscale. The sidecar logs in from `TS_AUTHKEY`, stores its node identity in the `tailscale-state` volume, and keeps the same machine on later starts (`TS_AUTH_ONCE`). Kernel networking is on (`TS_USERSPACE=false`), which needs `/dev/net/tun`. `TS_ACCEPT_DNS=true` installs MagicDNS in that shared network, so `LM_STUDIO_BASE_URL` can be a name like `http://studio.tailnet-name.ts.net:1234/v1`. A server on the Docker host is still `http://host.docker.internal:1234/v1`. That name is on the sidecar's hosts file, which Meridian uses because it shares the sidecar network.
+The app listens on port **43123**. SQLite, `data/endpoints.json`, and `data/secrets/endpoints.json` live in the `meridian-data` volume. `skills/` and `agent/` are mounted from this directory, so desk edits and files you add on the host are the same tree. Compose reads `.env` for the bootstrap variables and the auth key. Copy `.env.example` to `.env.local` for `npm run dev`. Saved profiles replace the LM Studio variables.
 
-The app listens on port **43123**. Compose publishes it on `127.0.0.1` only. From another device on your tailnet, open `http://meridian:43123`. Check the node with `docker compose exec tailscale tailscale status`. SQLite, `data/endpoints.json`, and `data/secrets/endpoints.json` live in the `meridian-data` volume. `skills/` and `agent/` are mounted from this directory, so desk edits and files you add on the host are the same tree.
+### Install Tailscale
 
-Compose reads `.env` for the bootstrap variables and the auth key. Copy `.env.example` to `.env.local` for `npm run dev`. Saved profiles replace the LM Studio variables. `npm run dev` does not start Tailscale.
+Install Tailscale as the Compose sidecar. Do not add it to the Meridian `Dockerfile`, and do not install the client on the host just to run this stack. Compose pulls `tailscale/tailscale:stable` and Meridian shares that container's network.
+
+1. Install Docker Engine and the Compose plugin. The host needs `/dev/net/tun`. If it is missing, `sudo modprobe tun`.
+2. In the [tailnet policy](https://login.tailscale.com/admin/acls), allow a tag such as `tag:meridian`.
+3. On the [Keys page](https://login.tailscale.com/admin/settings/keys), generate an auth key. Make it reusable, pre-approved, and non-ephemeral, and assign `tag:meridian` so the node is not owned by your user login. Copy the key when it is shown. It is not shown again.
+4. `cp .env.example .env`, then set `TS_AUTHKEY` to that key. `.env` is gitignored. Leave the key out of the Dockerfile and `docker-compose.yml`.
+5. `docker compose up --build`.
+6. `docker compose exec tailscale tailscale status` should list this node with a `100.x` address. From another device on the tailnet, open `http://meridian:43123`. For a machine that should stay signed in, open the Machines page and disable key expiry on `meridian`.
+
+The sidecar logs in from `TS_AUTHKEY` on first start. `TS_STATE_DIR` points at the `tailscale-state` volume, and `TS_AUTH_ONCE=true` reuses that node on later starts instead of logging in again. `TS_USERSPACE=false` uses the tun device, with `net_admin` and `net_raw`. `TS_ACCEPT_DNS=true` installs MagicDNS in the shared network, so `LM_STUDIO_BASE_URL` can be `http://studio.tailnet-name.ts.net:1234/v1`. `TS_HOSTNAME=meridian` is the name other devices use.
+
+Compose publishes **43123** on `127.0.0.1` only. A server on the Docker host is `http://host.docker.internal:1234/v1`. That name is on the sidecar's hosts file, which Meridian uses because it shares the sidecar network.
+
+`npm run dev` does not start this sidecar. When LM Studio is on another machine and you are not using Compose, install the client on each of those machines instead. On Linux:
+
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
+```
+
+That script is the one on the [download page](https://tailscale.com/download). Other systems use the package listed there. `tailscale status` should show a `100.x` address before you set the MagicDNS base URL.
 
 ## Scripts
 
