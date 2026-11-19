@@ -3,15 +3,9 @@
 import { useEffect, useRef } from "react";
 
 import type { TripPlace } from "@/lib/travel-types";
+import { TRIP_KIND_COLORS } from "@/lib/travel-types";
 
 import "leaflet/dist/leaflet.css";
-
-const COLORS: Record<TripPlace["kind"], string> = {
-  destination: "#c47a3a",
-  stay: "#6a8f72",
-  poi: "#8d7355",
-  transit: "#9a8f80",
-};
 
 export function TripMap({ places }: { places: TripPlace[] }) {
   const host = useRef<HTMLDivElement>(null);
@@ -35,7 +29,7 @@ export function TripMap({ places }: { places: TripPlace[] }) {
       for (const place of places) {
         const icon = L.divIcon({
           className: "",
-          html: `<span style="display:block;width:14px;height:14px;border-radius:999px;background:${COLORS[place.kind]};border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.3)"></span>`,
+          html: `<span style="display:block;width:14px;height:14px;border-radius:999px;background:${TRIP_KIND_COLORS[place.kind]};border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.3)"></span>`,
           iconSize: [14, 14],
           iconAnchor: [7, 7],
         });
@@ -51,7 +45,7 @@ export function TripMap({ places }: { places: TripPlace[] }) {
         if (group.length < 2 || !map) continue;
         L.polyline(
           group.map((place) => [place.lat, place.lng] as [number, number]),
-          { color: "#c47a3a", weight: 3, opacity: 0.75 },
+          { color: TRIP_KIND_COLORS.destination, weight: 3, opacity: 0.75 },
         ).addTo(map);
       }
       if (places.length === 1) map.setView([places[0].lat, places[0].lng], 12);

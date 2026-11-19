@@ -2,7 +2,7 @@ import { executeCustomTool, listCustomTools } from "@/lib/custom-tools";
 import { messageOf } from "@/lib/errors";
 import { listMcpServers } from "@/lib/mcp-config";
 import { callMcpTool, ensureMcpConnections, mcpLiveView } from "@/lib/mcp-runtime";
-import { executeTool } from "@/lib/tools";
+import { executeTool, type ToolContext } from "@/lib/tools";
 import { mergeToolRegistry, type ToolBundle, type ToolRoute } from "@/lib/tool-registry";
 
 function safeList<T>(read: () => T[]): T[] {
@@ -54,10 +54,11 @@ export async function executeAgentTool(
   name: string,
   rawArgs: string,
   routes: Record<string, ToolRoute>,
+  context: ToolContext = {},
 ): Promise<Record<string, unknown>> {
   const route = routes[name];
   try {
-    if (!route) return await executeTool(name, rawArgs);
+    if (!route) return await executeTool(name, rawArgs, context);
     if (route.source === "mcp") return await callMcpTool(route.sourceId, route.remoteName, rawArgs);
     return await executeCustomTool(route.sourceId, rawArgs);
   } catch (err) {

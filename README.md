@@ -50,12 +50,13 @@ This environment does not need Tailscale installed. Set the URL to wherever LM S
 
 ## Chat
 
-- Streaming tokens, a thinking disclosure when the model emits reasoning, and a tool card for every call.
+- Streaming tokens, a thinking disclosure when the model emits reasoning, and a tool card for every call. Markdown replies have copyable fenced code blocks; generated images and image attachments render inline.
 - The loop keeps going until the model returns text with no tool calls, or after 6 passes. The last pass is forced to answer without tools.
-- Before answering the first message in a new chat, Meridian asks the configured model for a concise, high-level chat title. If title generation fails, the chat continues and shows the naming error.
+- After the first answer is complete, Meridian names the chat from the user's request and the finished answer. The title appears in the header as soon as it is ready. If naming fails, it falls back to the first message and shows a brief naming note.
 - **Stop** aborts the LM Studio request. Partial text is kept, a “Generation stopped.” note is stored, and unrun tool calls are closed with an error so the next turn stays valid. **Retry** drops the last assistant turn and runs the same user message again.
 - The header model control lists ids from the last successful `GET /v1/models`. If LM Studio is unreachable, that list stays available and a banner says the server is offline. You can still type an id before the first successful check.
-- The sidebar’s **Image Studio** can generate batches with `gpt-image-2`, choose a preset or custom canvas size, and edit an uploaded PNG/JPEG/WebP. Its OpenAI key is stored in this browser’s local storage (not cookies or the Meridian settings file) and sent only with image requests.
+- The sidebar’s **Image Studio** can generate batches with `gpt-image-2`, choose a preset or custom canvas size, and edit an uploaded PNG/JPEG/WebP. It uses the saved endpoint key from this machine. The results and their prompts are kept in the backend image log.
+- Type `/image` plus a description in any chat. The model calls `image_generate`, which writes the file under `data/images` and stores a record in SQLite beside the chat logs. Generated images appear in the transcript and in the Image Studio’s **Saved images** list. `GET /api/images?sessionId=…` lists records; `GET /api/images/<id>` serves the file.
 - Attach text, markdown, code, or a PNG/JPEG/GIF/WebP image. Text is stored with the message and sent to the model as part of the turn. Images are sent as OpenAI-style `image_url` parts when the loaded model supports vision. Files named like `.env`, keys, or pems are refused, and a file that is mostly `KEY=value` lines is refused too.
 - Sessions can be renamed, pinned, archived, searched (title or transcript), exported as Markdown or JSON, and imported from a Meridian JSON export. Deleting a chat does not touch memory. SQLite lives at `data/meridian.sqlite`. Renaming updates the chat header immediately.
 - `/name` at the start of a message loads that skill for the model. The transcript stores what you typed. Up to five leading skill tokens are honored. The older `/skill:name` form still works.
@@ -84,6 +85,7 @@ Shipped skills:
 
 | Skill | Use it when |
 | --- | --- |
+| `image` | The user wants a picture generated from a description (`/image`) |
 | `web-research` | The user wants a short research brief from real URLs |
 | `code-explain` | They pasted code and want it explained, not replaced |
 | `daily-planning` | They want a plan for the day or the next block of work |
@@ -201,14 +203,14 @@ Hermes and Pi ideas, and where they live here:
 | Frozen memory snapshot, char-limit errors | `lib/memory.ts`. Snapshot text is rendered in `renderMemorySnapshot` and stored on the session row. |
 | Agent loop: stream, tools, append, repeat | `lib/agent.ts`. OpenAI-compatible streaming client in `lib/lmstudio.ts`, with short retries on 408/429/5xx and network blips (`lib/retry.ts`). |
 | Compaction that keeps the original transcript | `lib/compact.ts`. Summary and boundary seq are columns on the session. Messages stay in SQLite. |
-| Session tree / persistence | `lib/sessions.ts` and `lib/db.ts` (`node:sqlite`). This version stores a single active branch per chat, not Pi’s full message tree. |
+| Session tree / persistence | `lib/sessions.ts` and `lib/db.ts` (`node:sqlite`). This version stores a single active branch per chat, not Pi’s full message tree. Generated images get an `images` row plus a file in `data/images` (`lib/image-store.ts`, `lib/image-generator.ts`). |
 | Server-side tools only | `app/api/chat/route.ts` runs the loop. `fetch_url` (`lib/fetch-url.ts`, `lib/net.ts`) refuses loopback, private, link-local, Tailscale CGNAT, and encoded or leading-zero numeric hosts. |
 | MCP client and custom tools | `lib/mcp-runtime.ts` connects stdio, streamable HTTP, and SSE. `lib/custom-tools.ts` calls webhooks. `lib/tool-registry.ts` merges them with built-ins without letting either replace `memory`, `skill_view`, `list_skills`, `fetch_url`, `current_time`, or `travel_*`. |
 | Travel lookups and the trip map | `lib/travel.ts` calls Open-Meteo, Nominatim, and OSRM. `lib/travel-math.ts` is the haversine and illustrative fare math. `lib/travel-store.ts` stores the plan and price URL. `components/travel-screen.tsx` and `components/trip-map.tsx` are the page and Leaflet map. |
 
 `agent/AGENTS.md` is the model’s project context. The `AGENTS.md` at the repo root is Next.js guidance for coding agents and is not injected into the prompt.
 
-Built-in tools: `memory`, `skill_view`, `list_skills`, `fetch_url`, `current_time`, `travel_geocode`, `travel_weather`, `travel_places`, `travel_route`, `travel_prices`, and `travel_plan`. MCP and custom tools are added beside them at request time.
+Built-in tools: `memory`, `skill_view`, `list_skills`, `fetch_url`, `current_time`, `image_generate`, `travel_geocode`, `travel_weather`, `travel_places`, `travel_route`, `travel_prices`, and `travel_plan`. MCP and custom tools are added beside them at request time.
 
 ## Docker
 

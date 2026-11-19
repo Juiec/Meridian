@@ -263,16 +263,25 @@ export function SettingsForm() {
                     ) : null}
                     {endpoint.models.length > 0 ? (
                       <div className="mt-3 flex flex-wrap gap-1.5">
-                        {endpoint.models.map((id) => (
-                          <button
-                            key={id}
-                            type="button"
-                            className="rounded-md border border-border px-2 py-1 font-mono text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
-                            onClick={() => updateEndpoint(endpoint.id, { model: id })}
-                          >
-                            {id}
-                          </button>
-                        ))}
+                        {endpoint.models.map((id) => {
+                          const active = endpoint.model === id;
+                          return (
+                            <button
+                              key={id}
+                              type="button"
+                              aria-pressed={active}
+                              className={cn(
+                                "rounded-md border px-2 py-1 font-mono text-[11px] transition-colors",
+                                active
+                                  ? "border-copper/60 bg-copper/10 text-copper"
+                                  : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
+                              )}
+                              onClick={() => updateEndpoint(endpoint.id, { model: id })}
+                            >
+                              {id}
+                            </button>
+                          );
+                        })}
                       </div>
                     ) : null}
                   </div>

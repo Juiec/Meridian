@@ -99,6 +99,7 @@ export function Composer({
                     type="button"
                     aria-label={`Remove ${file.name}`}
                     onClick={() => onAttachments(attachments.filter((item) => item !== file))}
+                    className="flex size-5 items-center justify-center rounded-full hover:bg-background"
                   >
                     <X className="size-3" />
                   </button>

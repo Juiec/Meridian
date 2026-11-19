@@ -11,7 +11,12 @@ export type ToolPart = {
 };
 
 export type TranscriptItem =
-  | { kind: "user"; id: string; content: string; attachments: { name: string; kind: "text" | "image" }[] }
+  | {
+      kind: "user";
+      id: string;
+      content: string;
+      attachments: { name: string; kind: "text" | "image"; dataUrl?: string }[];
+    }
   | { kind: "note"; id: string; content: string }
   | {
       kind: "assistant";
@@ -36,7 +41,11 @@ export function groupMessages(messages: StoredMessage[]): TranscriptItem[] {
         kind: "user",
         id: message.id,
         content: message.content,
-        attachments: (message.attachments ?? []).map((item) => ({ name: item.name, kind: item.kind })),
+        attachments: (message.attachments ?? []).map((item) => ({
+          name: item.name,
+          kind: item.kind,
+          dataUrl: item.dataUrl,
+        })),
       });
       continue;
     }

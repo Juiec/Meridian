@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { ChevronRight } from "lucide-react";
 
 import { MarkdownText } from "@/components/markdown-text";
 import { groupMessages, type ToolPart } from "@/lib/group-messages";
@@ -11,6 +12,23 @@ export type LivePart =
   | { kind: "text"; text: string }
   | { kind: "reasoning"; text: string }
   | ToolPart;
+
+type ImageResultItem = { id?: string; url?: string; prompt?: string };
+
+function resultImages(result?: string): ImageResultItem[] {
+  if (!result) return [];
+  try {
+    const parsed = JSON.parse(result) as { ok?: boolean; images?: unknown };
+    if (parsed.ok === false || !Array.isArray(parsed.images)) return [];
+    return parsed.images
+      .filter((item): item is ImageResultItem =>
+        Boolean(item) && typeof item === "object" && typeof (item as ImageResultItem).url === "string",
+      )
+      .slice(0, 10);
+  } catch {
+    return [];
+  }
+}
 
 export function Transcript({
   messages,
@@ -57,7 +75,11 @@ export function Transcript({
         {error ? (
           <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm">
             <p>{error}</p>
-            <button type="button" className="mt-2 underline underline-offset-2" onClick={onRetry}>
+            <button
+              type="button"
+              className="mt-2 rounded-sm font-medium text-destructive underline underline-offset-4"
+              onClick={onRetry}
+            >
               Retry
             </button>
           </div>
@@ -67,6 +89,24 @@ export function Transcript({
           if (item.kind === "user") {
             return (
               <div key={item.id} className="ml-auto max-w-[40rem] rounded-2xl bg-secondary px-4 py-3 text-[15px] leading-7">
+                {item.attachments.some((file) => file.kind === "image" && file.dataUrl) ? (
+                  <div className="mb-2 flex flex-wrap gap-2">
+                    {item.attachments.map((file, index) =>
+                      file.kind === "image" && file.dataUrl ? (
+                        <a
+                          key={`${file.name}-${index}`}
+                          href={file.dataUrl}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          className="block overflow-hidden rounded-lg border border-border/60"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={file.dataUrl} alt={file.name} loading="lazy" className="size-20 object-cover" />
+                        </a>
+                      ) : null,
+                    )}
+                  </div>
+                ) : null}
                 {item.attachments.length > 0 ? (
                   <ul className="mb-2 flex flex-wrap gap-1.5">
                     {item.attachments.map((file) => (
@@ -117,14 +157,31 @@ export function Transcript({
   );
 }
 
+function DisclosureChevron({ open }: { open: boolean }) {
+  return (
+    <ChevronRight
+      aria-hidden
+      className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform duration-150 motion-reduce:transition-none", open && "rotate-90")}
+    />
+  );
+}
+
 function CompactionNote({ summary }: { summary: string }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="rounded-xl border border-border bg-card px-4 py-3 text-sm">
-      <button type="button" className="text-left" onClick={() => setOpen((value) => !value)} aria-expanded={open}>
-        <span className="font-medium">Earlier context was compacted</span>
-        <span className="mt-1 block text-muted-foreground">
-          The full transcript stays here. The model continues from a summary.
+      <button
+        type="button"
+        className="flex w-full items-start gap-2 rounded-sm text-left"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+      >
+        <DisclosureChevron open={open} />
+        <span className="min-w-0 flex-1">
+          <span className="font-medium">Earlier context was compacted</span>
+          <span className="mt-1 block text-muted-foreground">
+            The full transcript stays here. The model continues from a summary.
+          </span>
         </span>
       </button>
       {open ? <p className="mt-3 whitespace-pre-wrap text-muted-foreground">{summary}</p> : null}
@@ -136,7 +193,13 @@ function Thinking({ text, streaming = false }: { text: string; streaming?: boole
   const [open, setOpen] = useState(false);
   return (
     <div className="text-sm text-muted-foreground">
-      <button type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open}>
+      <button
+        type="button"
+        className="inline-flex items-center gap-1.5 rounded-sm"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+      >
+        <DisclosureChevron open={open} />
         {streaming ? "Thinking…" : "Thinking"}
       </button>
       {open ? <p className="mt-2 whitespace-pre-wrap">{text}</p> : null}
@@ -151,7 +214,7 @@ function ToolCard({ part }: { part: ToolPart }) {
     <div className="rounded-xl border border-border bg-card">
       <button
         type="button"
-        className="flex w-full items-start gap-3 px-3 py-2.5 text-left"
+        className="flex w-full items-start gap-3 rounded-sm px-3 py-2.5 text-left"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
       >
@@ -171,7 +234,11 @@ function ToolCard({ part }: { part: ToolPart }) {
           </span>
           <span className="mt-0.5 block truncate text-xs text-muted-foreground">{summary}</span>
         </span>
+        <DisclosureChevron open={open} />
       </button>
+      {part.name === "image_generate" && !part.pending ? (
+        <GeneratedImages images={resultImages(part.result)} />
+      ) : null}
       {open ? (
         <div className="space-y-2 border-t border-border px-3 py-2 font-mono text-[11px] leading-5">
           {part.arguments ? (
@@ -180,6 +247,34 @@ function ToolCard({ part }: { part: ToolPart }) {
           {part.result ? <pre className="overflow-x-auto whitespace-pre-wrap text-muted-foreground">{part.result}</pre> : null}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function GeneratedImages({ images }: { images: ImageResultItem[] }) {
+  if (images.length === 0) return null;
+  return (
+    <div className="grid grid-cols-2 gap-2 border-t border-border px-3 py-3 sm:grid-cols-3">
+      {images.map((image, index) => (
+        <a
+          key={image.id ?? `${image.url}-${index}`}
+          href={image.url}
+          target="_blank"
+          rel="noreferrer"
+          className="group relative block overflow-hidden rounded-lg border border-border bg-muted"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={image.url}
+            alt={image.prompt || `Generated image ${index + 1}`}
+            loading="lazy"
+            className="aspect-square w-full object-cover"
+          />
+          <span className="absolute inset-x-0 bottom-0 truncate bg-black/65 px-2 py-1 text-[10px] text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+            {image.prompt || `Image ${index + 1}`}
+          </span>
+        </a>
+      ))}
     </div>
   );
 }

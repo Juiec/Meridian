@@ -1,10 +1,112 @@
 "use client";
 
+import { Check, Copy } from "lucide-react";
+import { isValidElement, useEffect, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
+
+function nodeText(node: ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(nodeText).join("");
+  if (isValidElement<{ children?: ReactNode }>(node)) return nodeText(node.props.children);
+  return "";
+}
+
+function codeLanguage(node: ReactNode): string {
+  let language = "";
+  const walk = (value: ReactNode) => {
+    if (language) return;
+    if (Array.isArray(value)) {
+      value.forEach(walk);
+      return;
+    }
+    if (isValidElement<{ className?: string; children?: ReactNode }>(value)) {
+      const match = /language-([\w+#.-]+)/.exec(value.props.className ?? "");
+      if (match) {
+        language = match[1];
+        return;
+      }
+      walk(value.props.children);
+    }
+  };
+  walk(node);
+  return language;
+}
+
+function safeImageSrc(src: string): boolean {
+  return (
+    /^\/api\/images\/[0-9a-f-]{36}$/i.test(src) ||
+    /^data:image\/(png|jpeg|gif|webp);base64,[a-z0-9+/=]+$/i.test(src)
+  );
+}
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    try {
+      const area = document.createElement("textarea");
+      area.value = text;
+      area.setAttribute("readonly", "");
+      area.style.position = "fixed";
+      area.style.opacity = "0";
+      document.body.appendChild(area);
+      area.select();
+      const copied = document.execCommand("copy");
+      area.remove();
+      return copied;
+    } catch {
+      return false;
+    }
+  }
+}
+
+function CodeBlock({ code, language }: { code: string; language: string }) {
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
+
+  const copy = async () => {
+    const copied = await copyText(code.replace(/\n$/, ""));
+    setState(copied ? "copied" : "failed");
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setState("idle"), 1600);
+  };
+
+  return (
+    <div className="mb-3 overflow-hidden rounded-lg border border-border bg-background/80 last:mb-0">
+      <div className="flex items-center justify-between gap-3 border-b border-border/70 bg-muted/30 px-3 py-1.5">
+        <span className="font-mono text-[11px] tracking-[0.16em] text-muted-foreground uppercase">
+          {language || "code"}
+        </span>
+        <button
+          type="button"
+          onClick={() => void copy()}
+          aria-label={state === "copied" ? "Code copied" : "Copy code"}
+          className="inline-flex items-center gap-1.5 rounded-sm px-1.5 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
+          {state === "copied" ? <Check className="size-3 text-sage" /> : <Copy className="size-3" />}
+          <span aria-live="polite">{state === "copied" ? "Copied" : state === "failed" ? "Copy failed" : "Copy"}</span>
+        </button>
+      </div>
+      <pre className="overflow-x-auto p-3 text-[13px] leading-6">
+        <code className="font-mono">{code.replace(/\n$/, "")}</code>
+      </pre>
+    </div>
+  );
+}
 
 export function MarkdownText({ text }: { text: string }) {
   return (
     <ReactMarkdown
+      urlTransform={(url) => {
+        if (/^(https?:\/\/|\/api\/images\/[0-9a-f-]{36}|data:image\/(png|jpeg|gif|webp);base64,)/i.test(url)) {
+          return url;
+        }
+        return "";
+      }}
       components={{
         p: ({ children }) => <p className="mb-3 leading-7 last:mb-0">{children}</p>,
         ul: ({ children }) => <ul className="mb-3 list-disc space-y-1 pl-5 last:mb-0">{children}</ul>,
@@ -26,10 +128,34 @@ export function MarkdownText({ text }: { text: string }) {
             </a>
           );
         },
+        img: ({ src, alt }) => {
+          const url = typeof src === "string" ? src : "";
+          if (!safeImageSrc(url)) {
+            return (
+              <span className="rounded border border-border bg-muted px-2 py-1 font-mono text-[11px] text-muted-foreground">
+                {alt || "Image"}
+              </span>
+            );
+          }
+          return (
+            <figure className="mb-3 overflow-hidden rounded-xl border border-border bg-muted/40 last:mb-0">
+              <a href={url} target="_blank" rel="noreferrer noopener" className="block">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={url}
+                  alt={alt || "Generated image"}
+                  loading="lazy"
+                  className="max-h-[28rem] w-full bg-background object-contain"
+                />
+              </a>
+              {alt ? (
+                <figcaption className="border-t border-border px-3 py-1.5 text-xs text-muted-foreground">{alt}</figcaption>
+              ) : null}
+            </figure>
+          );
+        },
         pre: ({ children }) => (
-          <pre className="mb-3 overflow-x-auto rounded-lg bg-background/80 p-3 text-[13px] leading-6 last:mb-0">
-            {children}
-          </pre>
+          <CodeBlock code={nodeText(children)} language={codeLanguage(children)} />
         ),
         code: ({ className, children }) =>
           className ? (
