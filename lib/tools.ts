@@ -279,6 +279,7 @@ function memoryOps(value: unknown): MemoryOp[] | { error: string } {
 export type ToolContext = {
   sessionId?: string;
   toolCallId?: string;
+  mode?: "agent" | "ask" | "plan";
 };
 
 export async function executeTool(

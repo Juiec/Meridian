@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { beforeEach, describe, expect, it } from "vitest";
@@ -234,5 +234,128 @@ describe("agent loop", () => {
     expect(after?.compactedSummary).toBe("They discussed four long turns.");
     expect(after?.systemPrompt).not.toBe(before);
     expect(after?.systemPrompt).toContain("# Skills index");
+  });
+
+  it("keeps Ask mode read-only and rejects a memory write", async () => {
+    const session = createSession();
+    const events: AgentEvent[] = [];
+    const seen: CompletionRequest[] = [];
+    await runTurn({
+      sessionId: session.id,
+      content: "/ask Remember that I prefer short answers.",
+      emit: (event) => events.push(event),
+      complete: scripted((request, call) => {
+        seen.push(request);
+        if (call === 1) {
+          return [
+            {
+              type: "tool_delta",
+              index: 0,
+              id: "call_mem",
+              name: "memory",
+              arguments: JSON.stringify({
+                target: "user",
+                operations: [{ action: "add", content: "Prefers short answers." }],
+              }),
+            },
+            { type: "finish", reason: "tool_calls" },
+          ];
+        }
+        return [{ type: "text", text: "Ask mode cannot save that." }, { type: "finish", reason: "stop" }];
+      }),
+    });
+
+    const names = (seen[0]?.tools ?? []).map((tool) => tool.function.name);
+    expect(names).toContain("fetch_url");
+    expect(names).toContain("skill_view");
+    expect(names).not.toContain("memory");
+    expect(names).not.toContain("image_generate");
+    expect(names).not.toContain("travel_plan");
+    expect(String(seen[0]?.messages[0]?.content)).toContain("Mode: Ask");
+    expect(getSession(session.id)?.chatMode).toBe("ask");
+    expect(getSession(session.id)?.systemPrompt).not.toContain("Mode: Ask");
+    const result = events.find((event) => event.type === "tool_result");
+    expect(result).toMatchObject({ type: "tool_result", ok: false });
+    if (result?.type === "tool_result") expect(result.content).toContain("Ask mode blocked memory");
+    const userFile = path.join(process.env.MERIDIAN_HOME ?? "", "data", "memory", "USER.md");
+    expect(existsSync(userFile) && readFileSync(userFile, "utf8").includes("Prefers short answers.")).toBe(false);
+  });
+
+  it("stops Plan mode before image generation and keeps the mode until /agent", async () => {
+    const session = createSession();
+    const events: AgentEvent[] = [];
+    let planTools: string[] = [];
+    await runTurn({
+      sessionId: session.id,
+      content: "/plan-mode draw a lighthouse",
+      emit: (event) => events.push(event),
+      complete: scripted((request, call) => {
+        planTools = (request.tools ?? []).map((tool) => tool.function.name);
+        if (call === 1) {
+          return [
+            {
+              type: "tool_delta",
+              index: 0,
+              id: "call_img",
+              name: "image_generate",
+              arguments: JSON.stringify({ prompt: "a lighthouse" }),
+            },
+            { type: "finish", reason: "tool_calls" },
+          ];
+        }
+        return [{ type: "text", text: "Here is a plan." }, { type: "finish", reason: "stop" }];
+      }),
+    });
+
+    expect(planTools).not.toContain("image_generate");
+    expect(planTools).toContain("fetch_url");
+    expect(getSession(session.id)?.chatMode).toBe("plan");
+    const blocked = events.find((event) => event.type === "tool_result");
+    expect(blocked).toMatchObject({ type: "tool_result", ok: false });
+    if (blocked?.type === "tool_result") expect(blocked.content).toContain("Plan mode blocked image_generate");
+
+    let stillReadOnly = true;
+    await runTurn({
+      sessionId: session.id,
+      content: "What should the next step be?",
+      emit: () => undefined,
+      complete: scripted((request) => {
+        stillReadOnly = !(request.tools ?? []).some((tool) => tool.function.name === "memory");
+        return [{ type: "text", text: "Check the forecast first." }, { type: "finish", reason: "stop" }];
+      }),
+    });
+    expect(stillReadOnly).toBe(true);
+    expect(getSession(session.id)?.chatMode).toBe("plan");
+
+    let agentTools: string[] = [];
+    await runTurn({
+      sessionId: session.id,
+      content: "/agent Remember that I prefer short answers.",
+      emit: () => undefined,
+      complete: scripted((request, call) => {
+        agentTools = (request.tools ?? []).map((tool) => tool.function.name);
+        if (call === 1) {
+          return [
+            {
+              type: "tool_delta",
+              index: 0,
+              id: "call_mem",
+              name: "memory",
+              arguments: JSON.stringify({
+                target: "user",
+                operations: [{ action: "add", content: "Prefers short answers." }],
+              }),
+            },
+            { type: "finish", reason: "tool_calls" },
+          ];
+        }
+        return [{ type: "text", text: "Saved." }, { type: "finish", reason: "stop" }];
+      }),
+    });
+    expect(agentTools).toContain("memory");
+    expect(agentTools).toContain("image_generate");
+    expect(getSession(session.id)?.chatMode).toBe("agent");
+    const userFile = readFileSync(path.join(process.env.MERIDIAN_HOME ?? "", "data", "memory", "USER.md"), "utf8");
+    expect(userFile).toContain("Prefers short answers.");
   });
 });
