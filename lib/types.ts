@@ -1,3 +1,7 @@
+import type { ChatMode } from "@/lib/chat-mode";
+
+export type { ChatMode };
+
 export type MessageRole = "user" | "assistant" | "tool" | "note";
 
 export type ToolCallRecord = {
@@ -41,6 +45,7 @@ export type SessionRecord = {
   compactedUntilSeq: number | null;
   pinned: boolean;
   archived: boolean;
+  chatMode: ChatMode;
   createdAt: number;
   updatedAt: number;
 };

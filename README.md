@@ -60,6 +60,7 @@ This environment does not need Tailscale installed. Set the URL to wherever LM S
 - Attach text, markdown, code, or a PNG/JPEG/GIF/WebP image. Text is stored with the message and sent to the model as part of the turn. Images are sent as OpenAI-style `image_url` parts when the loaded model supports vision. Files named like `.env`, keys, or pems are refused, and a file that is mostly `KEY=value` lines is refused too.
 - Sessions can be renamed, pinned, archived, searched (title or transcript), exported as Markdown or JSON, and imported from a Meridian JSON export. Deleting a chat does not touch memory. SQLite lives at `data/meridian.sqlite`. Renaming updates the chat header immediately.
 - `/name` at the start of a message loads that skill for the model. The transcript stores what you typed. Up to five leading skill tokens are honored. The older `/skill:name` form still works.
+- `/ask` or `/ask-mode` switches the session to Ask mode: Meridian answers with read-only tools and will not write memory, generate images, update the trip, or call MCP or custom tools. `/plan` or `/plan-mode` uses those same tools, then stops with a plan instead of carrying it out. `/agent` returns to Agent mode, where every tool is available. The mode stays until another mode command. Typing `/` opens a menu of modes, skills, and tools. The text after `/` is a case-insensitive regular expression; an unfinished pattern is matched literally.
 - When the visible history passes about 18,000 characters and there are more than two turns, older turns are summarized. The transcript shows a compaction note. The full messages stay in SQLite. The summary is what the model sees. Skill index changes are refreshed in existing chats on the next message; compaction also rebuilds the full system prompt from disk.
 
 ## Skills
@@ -96,7 +97,7 @@ Shipped skills:
 | `itinerary-day` | They want a day-by-day plan from the pinned map |
 | `travel-research` | They want fares, weather, or entry notes looked up rather than invented |
 
-The desk can create, edit, and delete skills without a restart. A new skill needs a name (`lowercase-words`), a description of 1024 characters or fewer, and a body of 20,000 characters or fewer. Optional references live in `references/` as `notes.md` or `notes.txt`. `disable-model-invocation` hides a skill from the index while `/name` can still load it. Saving or adding a skill file refreshes the index in existing chats on the next message. You can also add a skill by creating `skills/your-name/SKILL.md` on disk. The desk inserts `/your-name` into the composer.
+The desk can create, edit, and delete skills without a restart. A new skill needs a name (`lowercase-words`), a description of 1024 characters or fewer, and a body of 20,000 characters or fewer. Optional references live in `references/` as `notes.md` or `notes.txt`. `disable-model-invocation` hides a skill from the index while `/name` can still load it. Saving or adding a skill file refreshes the index in existing chats on the next message. You can also add a skill by creating `skills/your-name/SKILL.md` on disk. The desk inserts `/your-name` into the composer. Names `ask`, `plan`, and `agent` are reserved for chat modes, so a skill should not use them.
 
 ## Memory
 
