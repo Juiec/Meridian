@@ -1,18 +1,41 @@
 services:
+  tailscale:
+    image: tailscale/tailscale:stable
+    hostname: meridian
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+      TS_HOSTNAME: meridian
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_AUTH_ONCE: "true"
+      TS_USERSPACE: "false"
+      TS_ACCEPT_DNS: "true"
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - net_admin
+      - net_raw
+    ports:
+      - "127.0.0.1:43123:43123"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
   meridian:
     build: .
-    ports:
-      - "43123:43123"
+    network_mode: service:tailscale
+    depends_on:
+      - tailscale
     environment:
       LM_STUDIO_BASE_URL: ${LM_STUDIO_BASE_URL:-}
       LM_STUDIO_API_KEY: ${LM_STUDIO_API_KEY:-}
       MODEL: ${MODEL:-}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     volumes:
       - meridian-data:/app/data
       - ./skills:/app/skills
       - ./agent:/app/agent
+    restart: unless-stopped
 
 volumes:
   meridian-data:
+  tailscale-state:
