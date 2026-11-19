@@ -129,6 +129,7 @@ export type AgentEvent =
       content: string;
       ok: boolean;
     }
+  | { type: "partial"; message: StoredMessage }
   | { type: "subagent"; title: string; detail: string }
   | { type: "compaction"; summary: string; mode: "model" | "extractive" }
   | { type: "error"; message: string }

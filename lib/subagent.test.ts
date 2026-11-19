@@ -144,4 +144,36 @@ describe("subagent", () => {
     expect(results.slice(0, 3).every((message) => message.content.includes('"ok": true'))).toBe(true);
     expect(results[3]?.content).toContain("already ran 3 subagents");
   });
+
+  it("gives a running subagent the steer before its next pass", async () => {
+    const parent = createSession();
+    const queued: string[] = [];
+    const steered: string[] = [];
+    let calls = 0;
+    const result = await runSubagent({
+      parentSessionId: parent.id,
+      rawArgs: JSON.stringify({ task: "Look up trains to Kyoto.", context: "April trip." }),
+      pullSteers: () => queued.splice(0, queued.length),
+      onSteered: (text) => steered.push(text),
+      complete: async function* (request) {
+        calls += 1;
+        if (calls === 1) {
+          yield { type: "text", text: "Checking trains." };
+          queued.push("Skip the lookup. Just say pears.");
+          throw new DOMException("Aborted", "AbortError");
+        }
+        const blob = request.messages.map((message) => String(message.content ?? "")).join("\n");
+        expect(blob).toContain("The user steered:");
+        expect(blob).toContain("Just say pears.");
+        expect(blob.indexOf("Checking trains.")).toBeLessThan(blob.indexOf("Just say pears."));
+        yield { type: "text", text: "Pears." };
+        yield { type: "finish", reason: "stop" };
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.result).toBe("Pears.");
+    expect(steered).toEqual(["Skip the lookup. Just say pears."]);
+    expect(calls).toBe(2);
+  });
 });

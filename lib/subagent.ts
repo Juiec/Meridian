@@ -178,6 +178,9 @@ export async function runSubagent(input: {
   rawArgs: string;
   signal?: AbortSignal;
   complete: CompleteFn;
+  pullSteers?: () => string[];
+  completionSignal?: () => AbortSignal;
+  onSteered?: (text: string) => void;
   onStatus?: (detail: string) => void;
 }): Promise<Record<string, unknown>> {
   const request = readDelegateRequest(input.rawArgs);
@@ -216,14 +219,29 @@ export async function runSubagent(input: {
   status(`Subagent · ${request.title}`);
 
   let passes = 0;
+  let budget = SUBAGENT_MAX_PASSES;
+  const applySteers = (texts: string[]) => {
+    if (texts.length === 0) return false;
+    for (const text of texts) {
+      insertMessage({
+        sessionId: child.id,
+        role: "user",
+        content: `The user steered:\n${text}`,
+      });
+      input.onSteered?.(text);
+    }
+    if (passes >= budget) budget = Math.min(passes + 1, SUBAGENT_MAX_PASSES + 1);
+    return true;
+  };
   try {
-    for (let pass = 1; pass <= SUBAGENT_MAX_PASSES; pass += 1) {
+    for (let pass = 1; pass <= budget; pass += 1) {
       if (input.signal?.aborted) {
         return { ok: false, error: "Stopped before the subagent finished.", title: request.title, sessionId: child.id };
       }
       passes = pass;
-      const forceText = pass === SUBAGENT_MAX_PASSES;
-      status(`Subagent pass ${pass} of ${SUBAGENT_MAX_PASSES} · ${request.title}`);
+      applySteers(input.pullSteers?.() ?? []);
+      const forceText = pass >= budget;
+      status(`Subagent pass ${pass} of ${budget} · ${request.title}`);
       compactSubagentSession(child.id);
       const current = getSession(child.id);
       if (!current) return { ok: false, error: "Subagent session disappeared.", sessionId: child.id };
@@ -260,7 +278,7 @@ export async function runSubagent(input: {
           messages,
           tools: forceText ? undefined : definitions,
           temperature: forceText ? 0.3 : 0.4,
-          signal: input.signal,
+          signal: input.completionSignal?.() ?? input.signal,
         })) {
           if (input.signal?.aborted) break;
           if (delta.type === "text") text += delta.text;
@@ -269,6 +287,13 @@ export async function runSubagent(input: {
         }
       } catch (err) {
         if (isAbortError(err) || input.signal?.aborted) {
+          const texts = input.signal?.aborted ? [] : (input.pullSteers?.() ?? []);
+          if (texts.length > 0) {
+            const spoken = text.trim() || reasoning.trim();
+            if (spoken) insertMessage({ sessionId: child.id, role: "assistant", content: spoken });
+            applySteers(texts);
+            continue;
+          }
           return { ok: false, error: "Stopped before the subagent finished.", title: request.title, sessionId: child.id };
         }
         return { ok: false, error: messageOf(err), title: request.title, sessionId: child.id };

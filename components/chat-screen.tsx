@@ -144,6 +144,12 @@ export function ChatScreen({
       const label = event.phase === "answer" ? "Writing the answer" : "Tools allowed";
       setStatus(`Pass ${event.n} of ${event.max} · ${label}`);
       setLive((current) => ({ parts: current?.parts ?? [], status: `Pass ${event.n} of ${event.max}` }));
+    } else if (event.type === "partial") {
+      setMessages((current) => [...current, event.message]);
+      setLive((current) =>
+        current ? { parts: current.parts.filter((part) => part.kind === "tool"), status: "Steering" } : current,
+      );
+      setStatus("Steering");
     } else if (event.type === "user") {
       setMessages((current) => {
         const index = current.findIndex((message) => message.id.startsWith("local-"));
@@ -303,6 +309,44 @@ export function ChatScreen({
       setRunning(false);
       setLive(null);
       setStreamError(err instanceof Error ? err.message : "The turn failed.");
+    }
+  }
+
+  async function steer() {
+    const content = draft.trim();
+    if (!content || !activeSessionId || !running || attachments.length > 0) return;
+    setStreamError(null);
+    setDraft("");
+    localId.current += 1;
+    const optimistic: StoredMessage = {
+      id: `local-${localId.current}`,
+      sessionId: activeSessionId,
+      seq: -1,
+      role: "user",
+      content,
+      toolCalls: null,
+      toolCallId: null,
+      toolName: null,
+      reasoning: null,
+      attachments: [],
+      createdAt: Date.now(),
+    };
+    setMessages((current) => [...current, optimistic]);
+    setStatus("Steering");
+    try {
+      const response = await fetch(`/api/sessions/${activeSessionId}/steer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      });
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error || "Could not steer.");
+      }
+    } catch (err) {
+      setMessages((current) => current.filter((message) => message.id !== optimistic.id));
+      setDraft(content);
+      setStreamError(err instanceof Error ? err.message : "Could not steer.");
     }
   }
 
@@ -546,6 +590,7 @@ export function ChatScreen({
           onAttachments={setAttachments}
           onAttachError={setStreamError}
           onSubmit={() => void send()}
+          onSteer={() => void steer()}
           onStop={() => abortRef.current?.abort()}
           onRetry={() => void retryLast()}
           canRetry={canRetry}

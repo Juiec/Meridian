@@ -4,7 +4,7 @@ import { runTurn } from "@/lib/agent";
 import { prepareAttachments, type IncomingAttachment } from "@/lib/attachments";
 import { messageOf } from "@/lib/errors";
 import { jsonError, readBody } from "@/lib/http";
-import { finishRun, claimRun } from "@/lib/runs";
+import { claimRun, completionSignal, drainSteers, finishRun } from "@/lib/runs";
 import { getSession, lastUserMessage } from "@/lib/sessions";
 import { getSettings } from "@/lib/settings";
 import { encodeSse } from "@/lib/sse";
@@ -57,6 +57,8 @@ export async function POST(request: Request) {
           attachments: replay ? undefined : prepared.attachments,
           replay,
           signal: controller.signal,
+          pullSteers: () => drainSteers(sessionId),
+          completionSignal: () => completionSignal(sessionId, controller.signal),
           emit,
         });
       } catch (err) {

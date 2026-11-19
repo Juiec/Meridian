@@ -441,4 +441,45 @@ describe("agent loop", () => {
     deleteSession(session.id);
     expect(getSession(childId)).toBeNull();
   });
+
+  it("keeps a partial answer and follows a steer", async () => {
+    const session = createSession();
+    const queued: string[] = [];
+    const events: AgentEvent[] = [];
+    let calls = 0;
+    await runTurn({
+      sessionId: session.id,
+      content: "Look up the trains.",
+      emit: (event) => events.push(event),
+      pullSteers: () => queued.splice(0, queued.length),
+      complete: async function* (request) {
+        const system = String(request.messages[0]?.content ?? "");
+        if (system.startsWith("Create a concise, high-level title")) {
+          yield { type: "text", text: "Pears" };
+          yield { type: "finish", reason: "stop" };
+          return;
+        }
+        calls += 1;
+        if (calls === 1) {
+          yield { type: "text", text: "Looking up trains." };
+          queued.push("Skip the lookup. Just say pears.");
+          throw new DOMException("Aborted", "AbortError");
+        }
+        const blob = request.messages.map((message) => String(message.content ?? "")).join("\n");
+        expect(blob).toContain("Looking up trains.");
+        expect(blob.indexOf("Looking up trains.")).toBeLessThan(blob.indexOf("Just say pears."));
+        yield { type: "text", text: "Pears." };
+        yield { type: "finish", reason: "stop" };
+      },
+    });
+
+    const contents = listMessages(session.id).map((message) => message.content);
+    expect(contents).toContain("Looking up trains.");
+    expect(contents).toContain("Skip the lookup. Just say pears.");
+    expect(contents).toContain("Pears.");
+    const partial = events.findIndex((event) => event.type === "partial");
+    const steer = events.findIndex((event) => event.type === "user" && event.message.content.includes("pears"));
+    expect(partial).toBeGreaterThanOrEqual(0);
+    expect(steer).toBeGreaterThan(partial);
+  });
 });
