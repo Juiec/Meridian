@@ -1,7 +1,7 @@
 "use client";
 
 import { Download, PanelRight } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { useAppState } from "@/components/app-state";
 import { readJson } from "@/components/client-api";
@@ -21,6 +21,40 @@ type DetailResponse = {
   session: SessionRecord;
   messages: StoredMessage[];
 };
+
+function readStoredDesk(): boolean {
+  try {
+    return localStorage.getItem("meridian-desk-collapsed") === "1";
+  } catch {
+    return false;
+  }
+}
+
+let deskCollapsedValue = false;
+const deskListeners = new Set<() => void>();
+
+function subscribeDesk(listener: () => void) {
+  deskListeners.add(listener);
+  return () => {
+    deskListeners.delete(listener);
+  };
+}
+
+function getDeskCollapsed() {
+  return deskCollapsedValue;
+}
+
+function writeDeskCollapsed(next: boolean) {
+  deskCollapsedValue = next;
+  try {
+    localStorage.setItem("meridian-desk-collapsed", next ? "1" : "0");
+  } catch {
+    /* The choice still applies for this visit. */
+  }
+  for (const listener of deskListeners) listener();
+}
+
+if (typeof window !== "undefined") deskCollapsedValue = readStoredDesk();
 
 export function ChatScreen({
   embedded = false,
@@ -58,6 +92,7 @@ export function ChatScreen({
   const [streamError, setStreamError] = useState<string | null>(null);
   const [live, setLive] = useState<{ parts: LivePart[]; status: string } | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  const deskCollapsed = useSyncExternalStore(subscribeDesk, getDeskCollapsed, () => false);
   const [toolCatalog, setToolCatalog] = useState<ComposerTool[]>([]);
   const [modelDraft, setModelDraft] = useState("");
   const [modelFor, setModelFor] = useState<string | null>(null);
@@ -68,7 +103,11 @@ export function ChatScreen({
 
   if (!embedded && composerSeed && composerSeed !== appliedSeed) {
     setAppliedSeed(composerSeed);
-    setDraft(composerSeed);
+    setDraft((current) => {
+      if (!current.trim()) return composerSeed;
+      if (current.includes(composerSeed)) return current;
+      return `${current.replace(/\s+$/, "")}\n${composerSeed}`;
+    });
     setFocusTick((value) => value + 1);
   }
 
@@ -80,6 +119,10 @@ export function ChatScreen({
     if (focusTick === 0) return;
     document.getElementById("composer")?.focus();
   }, [focusTick]);
+
+  function toggleDesk() {
+    writeDeskCollapsed(!deskCollapsed);
+  }
 
   useEffect(() => {
     const ac = new AbortController();
@@ -605,6 +648,8 @@ export function ChatScreen({
       {!embedded ? (
         <Inspector
           open={inspectorOpen}
+          collapsed={deskCollapsed}
+          onToggleCollapsed={toggleDesk}
           onClose={() => setInspectorOpen(false)}
           systemPrompt={threadDetail?.systemPrompt ?? null}
           onInsertSkill={(name) => {

@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { useAppState } from "@/components/app-state";
 import { readJson } from "@/components/client-api";
+import { ProjectFiles } from "@/components/project-files";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import {
@@ -44,6 +45,7 @@ export function Sidebar({
     now,
     health,
     healthChecking,
+    queueComposer,
   } = useAppState();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [titleDraft, setTitleDraft] = useState("");
@@ -52,6 +54,7 @@ export function Sidebar({
   const [actionError, setActionError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [matches, setMatches] = useState<SessionSummary[] | null>(null);
+  const [pane, setPane] = useState<"chats" | "files">("chats");
   const [showArchived, setShowArchived] = useState(false);
   const [archivedSessions, setArchivedSessions] = useState<SessionSummary[]>([]);
   const importRef = useRef<HTMLInputElement>(null);
@@ -73,6 +76,12 @@ export function Sidebar({
 
   function selectSession(id: string) {
     setActiveSessionId(id);
+    onClose();
+    if (pathname !== "/") router.push("/");
+  }
+
+  function mentionFile(line: string) {
+    queueComposer(line);
     onClose();
     if (pathname !== "/") router.push("/");
   }
@@ -213,23 +222,57 @@ export function Sidebar({
         </div>
       </div>
       <div className="space-y-2 px-3 pb-3">
-        <p className="px-1 text-[11px] tracking-[0.14em] text-muted-foreground uppercase">Chats</p>
-        <Button type="button" className="w-full" onClick={() => void startNew()} disabled={busy}>
-          <Plus />
-          New chat
-        </Button>
-        <Input
-          value={query}
-          onChange={(event) => {
-            setQuery(event.target.value);
-            setMatches(null);
-          }}
-          placeholder="Search chats"
-          aria-label="Search chats"
-        />
+        <div className="flex gap-3 px-1" role="tablist" aria-label="Sidebar">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={pane === "chats"}
+            className={cn(
+              "border-b pb-0.5 text-[11px] tracking-[0.14em] uppercase",
+              pane === "chats" ? "border-copper text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+            )}
+            onClick={() => setPane("chats")}
+          >
+            Chats
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={pane === "files"}
+            className={cn(
+              "border-b pb-0.5 text-[11px] tracking-[0.14em] uppercase",
+              pane === "files" ? "border-copper text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+            )}
+            onClick={() => setPane("files")}
+          >
+            Files
+          </button>
+        </div>
+        {pane === "chats" ? (
+          <>
+            <Button type="button" className="w-full" onClick={() => void startNew()} disabled={busy}>
+              <Plus />
+              New chat
+            </Button>
+            <Input
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setMatches(null);
+              }}
+              placeholder="Search chats"
+              aria-label="Search chats"
+            />
+          </>
+        ) : null}
       </div>
-      <nav aria-label="Chats" className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-        {sessionsLoading ? (
+      <nav
+        aria-label={pane === "chats" ? "Chats" : "Project files"}
+        className="scroll-hidden min-h-0 flex-1 overflow-y-auto px-2 pb-3"
+      >
+        {pane === "files" ? (
+          <ProjectFiles onMention={mentionFile} />
+        ) : sessionsLoading ? (
           <p className="px-2 py-3 text-sm text-muted-foreground">Loading sessions…</p>
         ) : sessionsError ? (
           <div className="px-2 py-3">
@@ -352,6 +395,7 @@ export function Sidebar({
           </ul>
         )}
         {actionError ? <p className="px-2 pt-2 text-xs text-destructive">{actionError}</p> : null}
+        {pane === "chats" ? (
         <button
           type="button"
           className="mt-3 px-2 text-xs text-muted-foreground underline-offset-2 hover:underline"
@@ -359,7 +403,8 @@ export function Sidebar({
         >
           {showArchived ? "Hide archived" : "Show archived"}
         </button>
-        {showArchived ? (
+        ) : null}
+        {pane === "chats" && showArchived ? (
           archivedSessions.length === 0 ? (
             <p className="px-2 py-2 text-xs text-muted-foreground">No archived sessions.</p>
           ) : (

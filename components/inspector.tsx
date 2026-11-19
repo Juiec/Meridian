@@ -1,6 +1,6 @@
 "use client";
 
-import { X } from "lucide-react";
+import { PanelRightClose, PanelRightOpen, X } from "lucide-react";
 import Link from "next/link";
 
 import { useState } from "react";
@@ -17,11 +17,15 @@ import { cn } from "cn";
 
 export function Inspector({
   open,
+  collapsed,
+  onToggleCollapsed,
   onClose,
   systemPrompt,
   onInsertSkill,
 }: {
   open: boolean;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
   onClose: () => void;
   systemPrompt: string | null;
   onInsertSkill: (name: string) => void;
@@ -30,20 +34,52 @@ export function Inspector({
   const [editing, setEditing] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
+  const rail = collapsed && !open;
+
   return (
     <aside
       className={cn(
-        "z-30 flex h-full w-[min(100%,22rem)] shrink-0 flex-col border-l border-border bg-card",
-        open ? "fixed inset-y-0 right-0 flex xl:static" : "hidden xl:flex",
+        "z-30 flex h-full shrink-0 flex-col overflow-hidden border-l border-border bg-card transition-[width] duration-200 ease-out motion-reduce:transition-none",
+        open
+          ? "fixed inset-y-0 right-0 w-[min(100%,22rem)] xl:static xl:w-[22rem]"
+          : rail
+            ? "hidden w-11 xl:flex"
+            : "hidden w-[22rem] xl:flex",
       )}
     >
+      {rail ? (
+        <button
+          type="button"
+          className="flex h-full w-full flex-col items-center gap-3 py-3 text-muted-foreground hover:bg-muted hover:text-foreground"
+          aria-label="Open desk"
+          aria-expanded={false}
+          onClick={onToggleCollapsed}
+        >
+          <PanelRightOpen className="size-4" />
+          <span className="text-[11px] tracking-[0.18em] uppercase [writing-mode:vertical-rl]">Desk</span>
+        </button>
+      ) : (
+        <>
       <div className="flex items-center justify-between px-4 py-3">
         <h2 className="text-base font-medium tracking-wide uppercase">Desk</h2>
-        <Button type="button" variant="ghost" size="icon-sm" className="xl:hidden" aria-label="Close desk" onClick={onClose}>
-          <X />
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="hidden xl:inline-flex"
+            aria-label="Collapse desk"
+            aria-expanded
+            onClick={onToggleCollapsed}
+          >
+            <PanelRightClose />
+          </Button>
+          <Button type="button" variant="ghost" size="icon-sm" className="xl:hidden" aria-label="Close desk" onClick={onClose}>
+            <X />
+          </Button>
+        </div>
       </div>
-      <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-4 pb-6">
+      <div className="scroll-hidden min-h-0 flex-1 space-y-6 overflow-y-auto px-4 pb-6">
         <section>
           <h3 className="text-xs tracking-[0.14em] text-muted-foreground uppercase">Skills</h3>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -142,6 +178,8 @@ export function Inspector({
           )}
         </section>
       </div>
+        </>
+      )}
     </aside>
   );
 }

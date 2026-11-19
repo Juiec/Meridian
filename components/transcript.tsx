@@ -65,7 +65,7 @@ export function Transcript({
         if (!el) return;
         stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
       }}
-      className="min-h-0 flex-1 overflow-y-auto"
+      className="scroll-hidden min-h-0 flex-1 overflow-y-auto"
     >
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6 md:px-6">
         {compactedSummary ? <CompactionNote summary={compactedSummary} /> : null}
@@ -142,14 +142,16 @@ export function Transcript({
         })}
         {live ? (
           <article className="max-w-[46rem] space-y-3 text-[15px]" aria-live="polite">
+            {live.parts.some((part) => part.kind === "reasoning") ? null : live.parts.length === 0 ? (
+              <Thinking text="" streaming detail={live.status} />
+            ) : null}
             {live.parts.map((part, index) => {
-              if (part.kind === "reasoning") return <Thinking key={`live-r-${index}`} text={part.text} streaming />;
+              if (part.kind === "reasoning") {
+                return <Thinking key={`live-r-${index}`} text={part.text} streaming detail={live.status} />;
+              }
               if (part.kind === "text") return <MarkdownText key={`live-t-${index}`} text={part.text} />;
               return <ToolCard key={part.id || `live-tool-${index}`} part={part} />;
             })}
-            {live.parts.length === 0 ? (
-              <p className="text-sm text-muted-foreground">{live.status}</p>
-            ) : null}
           </article>
         ) : null}
       </div>
@@ -189,20 +191,78 @@ function CompactionNote({ summary }: { summary: string }) {
   );
 }
 
-function Thinking({ text, streaming = false }: { text: string; streaming?: boolean }) {
-  const [open, setOpen] = useState(false);
+function thinkingSteps(text: string): string[] {
+  const paragraphs = text
+    .split(/\n{2,}/)
+    .map((step) => step.trim())
+    .filter(Boolean);
+  if (paragraphs.length > 1) return paragraphs;
+  const lines = text
+    .split("\n")
+    .map((step) => step.trim())
+    .filter(Boolean);
+  const marked = lines.filter((line) => /^(?:\d+[.)]|[-*])\s+\S/.test(line));
+  if (marked.length >= 2 && marked.length >= lines.length - 1) return lines;
+  return text.trim() ? [text.trim()] : [];
+}
+
+function Thinking({
+  text,
+  streaming = false,
+  detail,
+}: {
+  text: string;
+  streaming?: boolean;
+  detail?: string;
+}) {
+  const [open, setOpen] = useState(streaming);
+  const steps = thinkingSteps(text);
+  const body = steps.length > 0 ? steps : streaming ? [detail?.trim() || "Still working."] : [];
   return (
-    <div className="text-sm text-muted-foreground">
+    <div
+      className={cn(
+        "overflow-hidden rounded-xl border text-sm",
+        streaming ? "border-copper/50 bg-copper/10 text-foreground" : "border-border bg-card text-muted-foreground",
+      )}
+      aria-busy={streaming || undefined}
+    >
       <button
         type="button"
-        className="inline-flex items-center gap-1.5 rounded-sm"
+        className={cn("flex w-full items-center gap-2 px-3 py-2.5 text-left", streaming && !open && "think-shine")}
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
+        aria-label={open ? "Collapse thinking" : "Expand thinking"}
       >
+        <span
+          className={cn("size-1.5 shrink-0 rounded-full", streaming ? "bg-copper" : "bg-muted-foreground")}
+          aria-hidden
+        />
+        <span className={cn("font-medium", streaming && "text-copper")}>Thinking</span>
+        {streaming && !open && detail ? (
+          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{detail}</span>
+        ) : (
+          <span className="flex-1" />
+        )}
         <DisclosureChevron open={open} />
-        {streaming ? "Thinking…" : "Thinking"}
       </button>
-      {open ? <p className="mt-2 whitespace-pre-wrap">{text}</p> : null}
+      {open && body.length > 0 ? (
+        <ol className="space-y-1 px-3 pb-3">
+          {body.map((step, index) => (
+            <li
+              key={index}
+              className={cn(
+                "leading-6 whitespace-pre-wrap",
+                streaming
+                  ? "think-shine rounded-lg bg-background/70 px-2.5 py-1.5 text-foreground"
+                  : "text-muted-foreground",
+              )}
+              style={streaming ? { animationDelay: `${index * 0.18}s` } : undefined}
+            >
+              {step}
+            </li>
+          ))}
+        </ol>
+      ) : null}
     </div>
   );
 }

@@ -147,6 +147,46 @@
   }
 }
 
+.scroll-hidden {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.scroll-hidden::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes meridian-shine {
+  from {
+    transform: translateX(-130%);
+  }
+  to {
+    transform: translateX(130%);
+  }
+}
+
+.think-shine {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.think-shine::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 32%,
+    color-mix(in oklch, var(--copper) 42%, transparent) 50%,
+    transparent 68%
+  );
+  transform: translateX(-130%);
+  animation: meridian-shine 1.7s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+  animation-delay: inherit;
+  pointer-events: none;
+}
+
 /* Reduced motion: keep state changes, remove the movement. */
 @media (prefers-reduced-motion: reduce) {
   *,
