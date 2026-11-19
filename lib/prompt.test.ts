@@ -34,6 +34,7 @@ describe("prompt assembly", () => {
     expect(memory).toBeLessThan(user);
     expect(user).toBeLessThan(runtime);
     expect(prompt).toContain("web-research:");
+    expect(prompt).toContain("delegate");
     expect(prompt).toContain("Editor is neovim.");
     expect(prompt).toContain("Name is glowdening.");
     expect(prompt).toContain("2026-10-24T18:00:00.000Z");

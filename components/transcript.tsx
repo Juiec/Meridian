@@ -239,6 +239,7 @@ function ToolCard({ part }: { part: ToolPart }) {
       {part.name === "image_generate" && !part.pending ? (
         <GeneratedImages images={resultImages(part.result)} />
       ) : null}
+      {part.name === "delegate" && !part.pending ? <DelegateResult result={part.result} /> : null}
       {open ? (
         <div className="space-y-2 border-t border-border px-3 py-2 font-mono text-[11px] leading-5">
           {part.arguments ? (
@@ -279,8 +280,38 @@ function GeneratedImages({ images }: { images: ImageResultItem[] }) {
   );
 }
 
+function delegateView(result?: string): { title: string; text: string; tools: string[] } | null {
+  if (!result) return null;
+  try {
+    const parsed = JSON.parse(result) as { ok?: boolean; title?: string; result?: string; tools?: unknown };
+    if (parsed.ok === false || typeof parsed.result !== "string" || !parsed.result.trim()) return null;
+    const tools = Array.isArray(parsed.tools) ? parsed.tools.filter((item): item is string => typeof item === "string") : [];
+    return { title: parsed.title?.trim() || "Subagent", text: parsed.result, tools };
+  } catch {
+    return null;
+  }
+}
+
+function DelegateResult({ result }: { result?: string }) {
+  const view = delegateView(result);
+  if (!view) return null;
+  return (
+    <div className="border-t border-border px-3 py-3 text-sm leading-6">
+      <p className="text-[11px] tracking-wide text-muted-foreground uppercase">{view.title}</p>
+      <div className="mt-1">
+        <MarkdownText text={view.text} />
+      </div>
+      {view.tools.length > 0 ? (
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          Worked with {view.tools.join(", ")}. The tool trace stayed in the subagent.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function toolSummary(part: ToolPart): string {
-  if (part.pending) return "Waiting for the tool to finish";
+  if (part.pending) return part.status || "Waiting for the tool to finish";
   if (!part.result) return part.ok === false ? "The tool failed" : "Finished";
   try {
     const parsed = JSON.parse(part.result) as {

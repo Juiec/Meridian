@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { runTurn } from "@/lib/agent";
 import type { CompletionDelta, CompletionRequest } from "@/lib/lmstudio";
 import { createSkill } from "@/lib/skill-store";
-import { createSession, getSession, insertMessage, listMessages } from "@/lib/sessions";
+import { createSession, deleteSession, getSession, insertMessage, listMessages, listSessions } from "@/lib/sessions";
 import { makeHome } from "@/lib/test-home";
 import type { AgentEvent } from "@/lib/types";
 
@@ -269,6 +269,7 @@ describe("agent loop", () => {
     expect(names).toContain("fetch_url");
     expect(names).toContain("skill_view");
     expect(names).not.toContain("memory");
+    expect(names).not.toContain("delegate");
     expect(names).not.toContain("image_generate");
     expect(names).not.toContain("travel_plan");
     expect(String(seen[0]?.messages[0]?.content)).toContain("Mode: Ask");
@@ -308,6 +309,7 @@ describe("agent loop", () => {
     });
 
     expect(planTools).not.toContain("image_generate");
+    expect(planTools).not.toContain("delegate");
     expect(planTools).toContain("fetch_url");
     expect(getSession(session.id)?.chatMode).toBe("plan");
     const blocked = events.find((event) => event.type === "tool_result");
@@ -353,9 +355,90 @@ describe("agent loop", () => {
       }),
     });
     expect(agentTools).toContain("memory");
+    expect(agentTools).toContain("delegate");
     expect(agentTools).toContain("image_generate");
     expect(getSession(session.id)?.chatMode).toBe("agent");
     const userFile = readFileSync(path.join(process.env.MERIDIAN_HOME ?? "", "data", "memory", "USER.md"), "utf8");
     expect(userFile).toContain("Prefers short answers.");
+  });
+
+  it("delegates into a clean subagent and leaves the tool trace out of the parent", async () => {
+    const session = createSession();
+    insertMessage({ sessionId: session.id, role: "user", content: "We are planning Kyoto in April." });
+    insertMessage({
+      sessionId: session.id,
+      role: "assistant",
+      content: "Trains only.",
+      toolCalls: [{ id: "old", name: "fetch_url", arguments: "{}" }],
+    });
+    insertMessage({
+      sessionId: session.id,
+      role: "tool",
+      content: `HUGE_TOOL_PAYLOAD_${"z".repeat(9000)}`,
+      toolCallId: "old",
+      toolName: "fetch_url",
+    });
+
+    const events: AgentEvent[] = [];
+    const childToolNames: string[][] = [];
+    let subCalls = 0;
+    let parentCalls = 0;
+    await runTurn({
+      sessionId: session.id,
+      content: "Check the weather without dragging the old page in.",
+      emit: (event) => events.push(event),
+      complete: scripted((request) => {
+        const system = String(request.messages[0]?.content ?? "");
+        if (system.includes("You are a Meridian subagent")) {
+          subCalls += 1;
+          childToolNames.push((request.tools ?? []).map((tool) => tool.function.name));
+          if (subCalls === 1) {
+            return [
+              { type: "tool_delta", index: 0, id: "sub_time", name: "current_time", arguments: "{}" },
+              { type: "finish", reason: "tool_calls" },
+            ];
+          }
+          return [{ type: "text", text: "April in Kyoto is mild. Pack a light jacket." }, { type: "finish", reason: "stop" }];
+        }
+        parentCalls += 1;
+        if (parentCalls === 1) {
+          return [
+            {
+              type: "tool_delta",
+              index: 0,
+              id: "call_del",
+              name: "delegate",
+              arguments: JSON.stringify({
+                title: "Kyoto weather",
+                task: "Summarize April weather in Kyoto.",
+                context: "Trip is Kyoto in April. Trains only. Do not use the old page.",
+              }),
+            },
+            { type: "finish", reason: "tool_calls" },
+          ];
+        }
+        return [{ type: "text", text: "Kyoto in April is mild." }, { type: "finish", reason: "stop" }];
+      }),
+    });
+
+    const parentTool = listMessages(session.id).find((message) => message.toolName === "delegate");
+    expect(parentTool?.content).toContain("Pack a light jacket");
+    expect(parentTool?.content).not.toContain("HUGE_TOOL_PAYLOAD");
+    expect(parentTool?.content).not.toContain("epochMs");
+    const childId = JSON.parse(parentTool?.content ?? "{}").sessionId as string;
+    const child = getSession(childId);
+    expect(child?.purpose).toBe("subagent");
+    expect(child?.parentId).toBe(session.id);
+    expect(child?.systemPrompt).toContain("Summarize April weather in Kyoto.");
+    expect(child?.systemPrompt).toContain("Trip is Kyoto in April");
+    expect(child?.systemPrompt).not.toContain("HUGE_TOOL_PAYLOAD");
+    expect(listSessions().map((item) => item.id)).not.toContain(childId);
+    expect(listMessages(childId).some((message) => message.content.includes("epochMs"))).toBe(true);
+    expect(childToolNames[0]).toContain("current_time");
+    expect(childToolNames[0]).not.toContain("delegate");
+    expect(events.some((event) => event.type === "subagent" && event.detail.includes("Kyoto weather"))).toBe(true);
+
+    deleteSession(session.id);
+    expect(getSession(childId)).toBeNull();
   });
 });

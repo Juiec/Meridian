@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   pinned INTEGER NOT NULL DEFAULT 0,
   archived INTEGER NOT NULL DEFAULT 0,
   chat_mode TEXT NOT NULL DEFAULT 'agent',
+  parent_id TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -85,6 +86,10 @@ function migrate(database: DatabaseSync) {
   if (sessions.size > 0 && !sessions.has("chat_mode")) {
     database.exec("ALTER TABLE sessions ADD COLUMN chat_mode TEXT NOT NULL DEFAULT 'agent'");
   }
+  if (sessions.size > 0 && !sessions.has("parent_id")) {
+    database.exec("ALTER TABLE sessions ADD COLUMN parent_id TEXT");
+  }
+  database.exec("CREATE INDEX IF NOT EXISTS sessions_parent ON sessions(parent_id)");
   if (sessions.size > 0) {
     database.exec("UPDATE sessions SET endpoint_id = 'default' WHERE endpoint_id = ''");
   }

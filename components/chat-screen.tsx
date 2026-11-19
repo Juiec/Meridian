@@ -173,6 +173,18 @@ export function ChatScreen({
         status: current?.status ?? "Running a tool",
       }));
       setStatus(`Running ${event.call.name}`);
+    } else if (event.type === "subagent") {
+      setStatus(event.detail);
+      setLive((current) => {
+        if (!current) return { parts: [], status: event.detail };
+        return {
+          ...current,
+          status: event.detail,
+          parts: current.parts.map((part) =>
+            part.kind === "tool" && part.pending && part.name === "delegate" ? { ...part, status: event.detail } : part,
+          ),
+        };
+      });
     } else if (event.type === "tool_result") {
       setLive((current) => {
         if (!current) return current;
