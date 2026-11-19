@@ -32,13 +32,13 @@ Open [http://127.0.0.1:43123](http://127.0.0.1:43123).
 http://studio.tailnet-name.ts.net:1234/v1
 ```
 
-Use `https` if you terminate TLS in front of LM Studio. If you leave the path off (`http://host:1234`), Meridian appends `/v1`. Put an API key in the key field only when the server expects `Authorization: Bearer …`. The key is written to `data/settings.json` on the server and is not returned to the browser.
+Use `https` if you terminate TLS in front of LM Studio. If you leave the path off (`http://host:1234`), Meridian appends `/v1`. Put an API key in the key field only when the server expects `Authorization: Bearer …`. The profile is written to `data/endpoints.json`. The key is written to `data/secrets/endpoints.json` (mode 0600) and is not returned to the browser.
 
 4. **Save & test connection**. The app calls `GET /v1/models` from the Next.js process and lists what the endpoint reports. Pick a default model id.
 
 Settings can hold up to 16 named endpoints, each with its own base URL, key, and model list. Choose which endpoint new chats should use; existing chats keep their endpoint and model, and the chat header can switch either one for that session.
 
-The same values can come from the environment. A saved settings file wins when the field is present.
+The same values can come from the environment until you save. A saved profile wins. The environment key is not copied into `data/endpoints.json`.
 
 | Variable | Purpose |
 | --- | --- |
@@ -220,9 +220,9 @@ Built-in tools: `memory`, `skill_view`, `list_skills`, `fetch_url`, `current_tim
 docker compose up --build
 ```
 
-The app listens on port **43123**. SQLite and settings live in the `meridian-data` volume. `skills/` and `agent/` are mounted from this directory, so desk edits and files you add on the host are the same tree.
+The app listens on port **43123**. SQLite, `data/endpoints.json`, and `data/secrets/endpoints.json` live in the `meridian-data` volume. `skills/` and `agent/` are mounted from this directory, so desk edits and files you add on the host are the same tree.
 
-The container does not join your tailnet. Set `LM_STUDIO_BASE_URL` to a name the container can resolve: a MagicDNS host, or `http://host.docker.internal:1234/v1` when LM Studio is on the machine running Docker. Compose reads a `.env` file in this directory for those variables. Copy `.env.example` to `.env` if you want them set.
+The container does not join your tailnet. Set `LM_STUDIO_BASE_URL` to a name the container can resolve: a MagicDNS host, or `http://host.docker.internal:1234/v1` when LM Studio is on the machine running Docker. Compose reads a `.env` file in this directory for those bootstrap variables. Copy `.env.example` to `.env` for Compose, and to `.env.local` for `npm run dev`. Saved profiles replace them.
 
 ## Scripts
 
