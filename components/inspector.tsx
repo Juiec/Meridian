@@ -97,7 +97,7 @@ export function Inspector({
         <section>
           <h3 className="text-xs tracking-[0.14em] text-muted-foreground uppercase">Tools</h3>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            Skills are playbooks loaded into the prompt. Tools are functions the model can call. MCP and custom HTTP tools are registered in settings and show up in the same tool cards as the built-ins.
+            Skills are playbooks loaded into the prompt. Tools are functions the model can call. delegate gives one task to a subagent with a short summary, so a long lookup stays out of this chat. MCP and custom HTTP tools are registered in settings and show up in the same tool cards as the built-ins.
           </p>
           <ToolsDeskSummary />
         </section>

@@ -8,6 +8,7 @@ export type ToolPart = {
   result?: string;
   pending?: boolean;
   ok?: boolean;
+  status?: string;
 };
 
 export type TranscriptItem =

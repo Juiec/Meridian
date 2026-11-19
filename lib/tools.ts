@@ -82,6 +82,27 @@ export const TOOLS: ToolDefinition[] = [
   {
     type: "function",
     function: {
+      name: "delegate",
+      description:
+        "Hand one task to a subagent that starts from a short context summary, not this chat. Use it when the next step would fill the context with a page, search results, or several lookups. The subagent does not see this conversation. Always pass context with the facts, constraints, and decisions it needs. You receive a short result, not its tool trace. Up to 3 calls per turn.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          task: { type: "string", description: "One assignment. Say what done looks like." },
+          context: {
+            type: "string",
+            description: "Facts the subagent cannot see: names, dates, constraints, and decisions so far. Keep it short.",
+          },
+          title: { type: "string", description: "Optional label, about 3 to 6 words." },
+        },
+        required: ["task"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "fetch_url",
       description:
         "Fetch a public http(s) URL and return readable text. Refuses private, loopback, and link-local addresses. Truncates long pages and says so.",
@@ -280,6 +301,7 @@ export type ToolContext = {
   sessionId?: string;
   toolCallId?: string;
   mode?: "agent" | "ask" | "plan";
+  delegate?: (rawArgs: string) => Promise<Record<string, unknown>>;
 };
 
 export async function executeTool(

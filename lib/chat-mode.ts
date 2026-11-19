@@ -47,7 +47,7 @@ export function modeInstructions(mode: ChatMode): string {
   if (mode === "ask") {
     return `# Mode: Ask
 
-You are in Ask mode. Answer the question. You may call only read-only tools: skill_view, list_skills, fetch_url, current_time, travel_geocode, travel_weather, travel_places, travel_route, and travel_prices. Do not write memory, generate images, change the trip, or call MCP or custom tools. If that work is needed, say the user can switch to Agent with /agent.`;
+You are in Ask mode. Answer the question. You may call only read-only tools: skill_view, list_skills, fetch_url, current_time, travel_geocode, travel_weather, travel_places, travel_route, and travel_prices. Do not write memory, generate images, change the trip, delegate, or call MCP or custom tools. If that work is needed, say the user can switch to Agent with /agent.`;
   }
   if (mode === "plan") {
     return `# Mode: Plan
@@ -56,5 +56,5 @@ You are in Plan mode. Use the same read-only tools as Ask mode, then stop. Reply
   }
   return `# Mode: Agent
 
-You are in Agent mode. Use the tools you need, including ones that write memory, generate images, or update the trip.`;
+You are in Agent mode. Use the tools you need, including ones that write memory, generate images, or update the trip. When a side task would fill this chat with tool output, call delegate so a subagent works from a short summary and returns only the result.`;
 }

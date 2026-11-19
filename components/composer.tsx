@@ -43,6 +43,7 @@ export function Composer({
   onAttachments,
   onAttachError,
   onSubmit,
+  onSteer,
   onStop,
   onRetry,
   canRetry,
@@ -59,6 +60,7 @@ export function Composer({
   onAttachments: (value: ComposerAttachment[]) => void;
   onAttachError: (message: string) => void;
   onSubmit: () => void;
+  onSteer: () => void;
   onStop: () => void;
   onRetry: () => void;
   canRetry: boolean;
@@ -77,6 +79,7 @@ export function Composer({
   const [highlightQuery, setHighlightQuery] = useState("");
   const [closedFor, setClosedFor] = useState<string | null>(null);
   const canSend = (draft.trim().length > 0 || attachments.length > 0) && !running && !disabledReason;
+  const canSteer = running && draft.trim().length > 0 && attachments.length === 0 && !disabledReason;
   const shownMode = parseSkillCommand(draft)?.mode ?? chatMode;
 
   const catalog = useMemo<SlashItem[]>(() => {
@@ -190,6 +193,10 @@ export function Composer({
       onSubmit={(event) => {
         event.preventDefault();
         if (menuOpen) return;
+        if (running) {
+          if (canSteer) onSteer();
+          return;
+        }
         if (canSend) onSubmit();
       }}
     >
@@ -302,12 +309,19 @@ export function Composer({
               }
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
+                if (running) {
+                  if (canSteer) onSteer();
+                  return;
+                }
                 if (canSend) onSubmit();
               }
             }}
             rows={2}
-            placeholder="Message Meridian. Type / for modes, skills, and tools."
-            disabled={running}
+            placeholder={
+              running
+                ? "Steer this turn. Enter sends the correction. Stop ends it."
+                : "Message Meridian. Type / for modes, skills, and tools."
+            }
             className="min-h-16 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent"
           />
           <div className="flex items-center justify-between gap-3 px-1 pb-1">
@@ -328,7 +342,9 @@ export function Composer({
                 ))}
               </div>
               <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground" aria-live="polite">
-                {status || disabledReason || "Enter to send · Shift+Enter for a new line"}
+                {status ||
+                  disabledReason ||
+                  (running ? "Steering keeps the turn. Stop ends it." : "Enter to send · Shift+Enter for a new line")}
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-1">
@@ -358,10 +374,15 @@ export function Composer({
                 </Button>
               ) : null}
               {running ? (
-                <Button type="button" variant="outline" size="sm" onClick={onStop}>
-                  <Square />
-                  Stop
-                </Button>
+                <>
+                  <Button type="submit" size="sm" disabled={!canSteer} aria-label="Steer">
+                    Steer
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={onStop}>
+                    <Square />
+                    Stop
+                  </Button>
+                </>
               ) : (
                 <Button type="submit" size="sm" disabled={!canSend} aria-label="Send message">
                   <ArrowUp />

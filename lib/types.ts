@@ -36,7 +36,8 @@ export type StoredMessage = {
 export type SessionRecord = {
   id: string;
   title: string;
-  purpose: "chat" | "travel";
+  purpose: "chat" | "travel" | "subagent";
+  parentId: string | null;
   endpointId: string;
   model: string;
   systemPrompt: string;
@@ -128,6 +129,8 @@ export type AgentEvent =
       content: string;
       ok: boolean;
     }
+  | { type: "partial"; message: StoredMessage }
+  | { type: "subagent"; title: string; detail: string }
   | { type: "compaction"; summary: string; mode: "model" | "extractive" }
   | { type: "error"; message: string }
   | { type: "done"; iterations: number; aborted?: boolean };

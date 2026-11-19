@@ -4,14 +4,14 @@ import { deleteImagesForSession } from "@/lib/image-store";
 import { readEntries } from "@/lib/memory";
 import { assembleSystemPrompt } from "@/lib/prompt";
 import { getSettings } from "@/lib/settings";
-import { discoverSkills } from "@/lib/skills";
+import { discoverSkills, skillsIndexHash } from "@/lib/skills";
 import { isChatMode } from "@/lib/chat-mode";
 import type { Attachment, ChatMode, SessionRecord, SessionSummary, StoredMessage, ToolCallRecord } from "@/lib/types";
 
 type SessionRow = {
   id: string;
   title: string;
-  purpose: "chat" | "travel";
+  purpose: string;
   endpoint_id: string;
   model: string;
   system_prompt: string;
@@ -21,9 +21,15 @@ type SessionRow = {
   pinned: number | bigint | null;
   archived: number | bigint | null;
   chat_mode: string | null;
+  parent_id: string | null;
   created_at: number | bigint;
   updated_at: number | bigint;
 };
+
+function purposeOf(value: string): SessionRecord["purpose"] {
+  if (value === "travel" || value === "subagent") return value;
+  return "chat";
+}
 
 type MessageRow = {
   id: string;
@@ -48,7 +54,7 @@ function mapSession(row: SessionRow): SessionRecord {
   return {
     id: row.id,
     title: row.title,
-    purpose: row.purpose,
+    purpose: purposeOf(row.purpose),
     endpointId: row.endpoint_id,
     model: row.model,
     systemPrompt: row.system_prompt,
@@ -58,6 +64,7 @@ function mapSession(row: SessionRow): SessionRecord {
     pinned: Number(row.pinned ?? 0) === 1,
     archived: Number(row.archived ?? 0) === 1,
     chatMode: isChatMode(row.chat_mode) ? row.chat_mode : "agent",
+    parentId: row.parent_id,
     createdAt: num(row.created_at) ?? 0,
     updatedAt: num(row.updated_at) ?? 0,
   };
@@ -103,7 +110,7 @@ export function toSummary(session: SessionRecord): SessionSummary {
 }
 
 const SESSION_COLUMNS = `id, title, purpose, endpoint_id, model, system_prompt, skills_index_hash, compacted_summary,
-              compacted_until_seq, pinned, archived, chat_mode, created_at, updated_at`;
+              compacted_until_seq, pinned, archived, chat_mode, parent_id, created_at, updated_at`;
 
 function likeTerm(query: string): string {
   return `%${query.replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
@@ -261,7 +268,31 @@ export function updateSessionTitleIfDefault(id: string, title: string): SessionR
   return getSession(id);
 }
 
+export function createSubagentSession(input: {
+  parentId: string;
+  title: string;
+  endpointId: string;
+  model: string;
+  systemPrompt: string;
+}): SessionRecord {
+  const id = crypto.randomUUID();
+  const now = Date.now();
+  const hash = skillsIndexHash(discoverSkills().skills);
+  db()
+    .prepare(
+      `INSERT INTO sessions
+        (id, title, purpose, endpoint_id, model, system_prompt, skills_index_hash, parent_id, created_at, updated_at)
+       VALUES (?, ?, 'subagent', ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(id, input.title, input.endpointId, input.model, input.systemPrompt, hash, input.parentId, now, now);
+  const session = getSession(id);
+  if (!session) throw new Error("Subagent session was not saved.");
+  return session;
+}
+
 export function deleteSession(id: string): boolean {
+  const children = db().prepare("SELECT id FROM sessions WHERE parent_id = ?").all(id) as Array<{ id: string }>;
+  for (const child of children) deleteSession(child.id);
   deleteImagesForSession(id);
   const result = db().prepare("DELETE FROM sessions WHERE id = ?").run(id);
   return result.changes > 0;

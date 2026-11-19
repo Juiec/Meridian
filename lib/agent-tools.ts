@@ -61,6 +61,12 @@ export async function executeAgentTool(
   if (!modeAllowsTool(mode, name)) {
     return { ok: false, error: modeRefusal(mode, name) };
   }
+  if (name === "delegate") {
+    if (!context.delegate) {
+      return { ok: false, error: "Subagents cannot delegate. Finish the task and return the result." };
+    }
+    return context.delegate(rawArgs);
+  }
   const route = routes[name];
   try {
     if (!route) return await executeTool(name, rawArgs, context);

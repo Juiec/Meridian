@@ -52,6 +52,8 @@ The same values can come from the environment until you save. A saved profile wi
 
 - Streaming tokens, a thinking disclosure when the model emits reasoning, and a tool card for every call. Markdown replies have copyable fenced code blocks; generated images and image attachments render inline.
 - The loop keeps going until the model returns text with no tool calls, or after 6 passes. The last pass is forced to answer without tools.
+- `delegate` sends one task to a subagent. The subagent starts from a short context summary, does the lookups, and returns only the result. Its tool trace stays out of this chat. A turn can start up to 3 subagents. Ask and Plan modes cannot delegate.
+- While a turn is running, the composer stays open. **Steer** sends a correction into the current turn. Meridian interrupts the model call in progress, keeps any partial answer, and follows the new instruction on the next pass. A running subagent sees the same steer. **Stop** still ends the turn.
 - After the first answer is complete, Meridian names the chat from the user's request and the finished answer. The title appears in the header as soon as it is ready. If naming fails, it falls back to the first message and shows a brief naming note.
 - **Stop** aborts the LM Studio request. Partial text is kept, a “Generation stopped.” note is stored, and unrun tool calls are closed with an error so the next turn stays valid. **Retry** drops the last assistant turn and runs the same user message again.
 - The header model control lists ids from the last successful `GET /v1/models`. If LM Studio is unreachable, that list stays available and a banner says the server is offline. You can still type an id before the first successful check.
@@ -127,7 +129,7 @@ A save that would pass the limit returns an error and leaves the file unchanged.
 
 ## Tools
 
-Skills and tools are different. A skill is a prompt playbook: the model sees a short index, then loads the procedure with `skill_view` or `/name`. A tool is a function the model can call. Built-in tools are `memory`, `skill_view`, `list_skills`, `fetch_url`, `current_time`, and the `travel_*` lookups below. MCP tools and custom HTTP tools join that same list. Their calls show up in the same tool cards in the transcript. The settings catalog lists every name the next turn can call.
+Skills and tools are different. A skill is a prompt playbook: the model sees a short index, then loads the procedure with `skill_view` or `/name`. A tool is a function the model can call. Built-in tools are `memory`, `skill_view`, `list_skills`, `delegate`, `fetch_url`, `current_time`, and the `travel_*` lookups below. MCP tools and custom HTTP tools join that same list. Their calls show up in the same tool cards in the transcript. The settings catalog lists every name the next turn can call.
 
 The browser never talks to an MCP server or a webhook. Settings and the desk ask this Next.js server, and the server connects.
 
@@ -205,6 +207,7 @@ Hermes and Pi ideas, and where they live here:
 | Skills index, body on demand | `lib/skills.ts` and `lib/skill-store.ts`. `skill_view` / `list_skills` in `lib/tools.ts`. `/name` in `lib/skill-command.ts` and `lib/agent.ts` |
 | Frozen memory snapshot, char-limit errors | `lib/memory.ts`. Snapshot text is rendered in `renderMemorySnapshot` and stored on the session row. |
 | Agent loop: stream, tools, append, repeat | `lib/agent.ts`. OpenAI-compatible streaming client in `lib/lmstudio.ts`, with short retries on 408/429/5xx and network blips (`lib/retry.ts`). |
+| Subagent with a fresh context | `delegate` in `lib/subagent.ts`. `lib/context-summary.ts` builds the brief and compacts the child when its own tool output grows. |
 | Compaction that keeps the original transcript | `lib/compact.ts`. Summary and boundary seq are columns on the session. Messages stay in SQLite. |
 | Session tree / persistence | `lib/sessions.ts` and `lib/db.ts` (`node:sqlite`). This version stores a single active branch per chat, not Pi’s full message tree. Generated images get an `images` row plus a file in `data/images` (`lib/image-store.ts`, `lib/image-generator.ts`). |
 | Server-side tools only | `app/api/chat/route.ts` runs the loop. `fetch_url` (`lib/fetch-url.ts`, `lib/net.ts`) refuses loopback, private, link-local, Tailscale CGNAT, and encoded or leading-zero numeric hosts. |
@@ -213,7 +216,7 @@ Hermes and Pi ideas, and where they live here:
 
 `agent/AGENTS.md` is the model’s project context. The `AGENTS.md` at the repo root is Next.js guidance for coding agents and is not injected into the prompt.
 
-Built-in tools: `memory`, `skill_view`, `list_skills`, `fetch_url`, `current_time`, `image_generate`, `travel_geocode`, `travel_weather`, `travel_places`, `travel_route`, `travel_prices`, and `travel_plan`. MCP and custom tools are added beside them at request time.
+Built-in tools: `memory`, `skill_view`, `list_skills`, `delegate`, `fetch_url`, `current_time`, `image_generate`, `travel_geocode`, `travel_weather`, `travel_places`, `travel_route`, `travel_prices`, and `travel_plan`. MCP and custom tools are added beside them at request time. `delegate` (`lib/subagent.ts`, `lib/context-summary.ts`) runs a child session whose prompt is the task plus a bounded summary. The parent tool result is that answer, not the child transcript. Child sessions use purpose `subagent` and stay out of the chat list. Deleting the parent chat deletes them.
 
 ## Docker
 
