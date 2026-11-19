@@ -40,6 +40,14 @@ export function settingsPath(): string {
   return path.join(dataDir(), "settings.json");
 }
 
+export function endpointsPath(): string {
+  return path.join(dataDir(), "endpoints.json");
+}
+
+export function endpointSecretsPath(): string {
+  return path.join(dataDir(), "secrets", "endpoints.json");
+}
+
 export function mcpConfigPath(): string {
   return path.join(dataDir(), "mcp-servers.json");
 }
