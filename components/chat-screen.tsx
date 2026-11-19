@@ -12,6 +12,7 @@ import { SidebarToggle } from "@/components/sidebar";
 import { Transcript, type LivePart } from "@/components/transcript";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { askAnswerPayload, findPendingQuestion } from "@/lib/ask-user";
 import { insertSkillToken } from "@/lib/slash-menu";
 import { readSse } from "@/lib/sse";
 import type { AgentEvent, SessionRecord, StoredMessage } from "@/lib/types";
@@ -98,6 +99,7 @@ export function ChatScreen({
   const [modelFor, setModelFor] = useState<string | null>(null);
   const [endpointDraft, setEndpointDraft] = useState("");
   const abortRef = useRef<AbortController | null>(null);
+  const sendingRef = useRef(false);
   const runFor = useRef<string | null>(null);
   const localId = useRef(0);
 
@@ -138,7 +140,7 @@ export function ChatScreen({
     return () => ac.abort();
   }, []);
 
-  const load = useCallback(async (id: string) => {
+  const load = useCallback(async (id: string): Promise<StoredMessage[] | null> => {
     setThreadError(null);
     try {
       const data = await readJson<DetailResponse>(await fetch(`/api/sessions/${id}`));
@@ -146,8 +148,10 @@ export function ChatScreen({
       setMessages(data.messages);
       setModelDraft(data.session.model);
       setEndpointDraft(data.session.endpointId);
+      return data.messages;
     } catch (err) {
       setThreadError(err instanceof Error ? err.message : "Could not open the session.");
+      return null;
     }
   }, []);
 
@@ -164,6 +168,7 @@ export function ChatScreen({
         setMessages(data.messages);
         setModelDraft(data.session.model);
         setEndpointDraft(data.session.endpointId);
+        setStatus(findPendingQuestion(data.messages) ? "Waiting for your answer" : null);
       } catch (err) {
         if (ac.signal.aborted) return;
         setThreadError(err instanceof Error ? err.message : "Could not open the session.");
@@ -195,11 +200,21 @@ export function ChatScreen({
       setStatus("Steering");
     } else if (event.type === "user") {
       setMessages((current) => {
-        const index = current.findIndex((message) => message.id.startsWith("local-"));
+        const index = current.findIndex((message) => message.role === "user" && message.id.startsWith("local-"));
         if (index === -1) return [...current, event.message];
         const next = [...current];
         next[index] = event.message;
         return next;
+      });
+    } else if (event.type === "question") {
+      setStatus("Waiting for your answer");
+      setLive((current) => {
+        const parts = (current?.parts ?? []).map((part) =>
+          part.kind === "tool" && part.id === event.toolCallId
+            ? { ...part, pending: false, awaitingUser: true }
+            : part,
+        );
+        return { parts, status: "Waiting for your answer" };
       });
     } else if (event.type === "note") {
       setMessages((current) => [...current, event.message]);
@@ -254,10 +269,11 @@ export function ChatScreen({
     }
   }
 
-  async function runChat(sessionId: string, body: Record<string, unknown>, optimistic?: StoredMessage) {
+  async function runChat(sessionId: string, body: Record<string, unknown>, optimistic?: StoredMessage[]) {
+    let waiting = false;
     const abort = new AbortController();
     abortRef.current = abort;
-    if (optimistic) setMessages((current) => [...current, optimistic]);
+    if (optimistic && optimistic.length > 0) setMessages((current) => [...current, ...optimistic]);
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -271,10 +287,13 @@ export function ChatScreen({
       }
       await readSse(response, (name, data) => {
         const event = data as AgentEvent;
-        if (event && typeof event === "object" && "type" in event) applyEvent(event, sessionId);
-        else if (name === "error") setStreamError("The stream returned an unreadable event.");
+        if (event && typeof event === "object" && "type" in event) {
+          if (event.type === "done" && event.awaiting === "question") waiting = true;
+          applyEvent(event, sessionId);
+        } else if (name === "error") setStreamError("The stream returned an unreadable event.");
       });
-      await load(sessionId);
+      const loaded = await load(sessionId);
+      if (loaded) waiting = findPendingQuestion(loaded) !== null;
       await refreshSessions();
       await refreshMemory();
     } catch (err) {
@@ -293,7 +312,7 @@ export function ChatScreen({
       setStreamingId(null);
       setLive(null);
       setRunning(false);
-      if (!stopped) setStatus(null);
+      if (!stopped) setStatus(waiting ? "Waiting for your answer" : null);
     }
   }
 
@@ -313,9 +332,11 @@ export function ChatScreen({
     return id;
   }
 
-  async function send() {
-    const content = draft.trim();
-    if ((!content && attachments.length === 0) || running) return;
+  async function submit(text: string, files: ComposerAttachment[]) {
+    const content = text.trim();
+    if (sendingRef.current || running) return;
+    if (!content && files.length === 0) return;
+    sendingRef.current = true;
     setStreamError(null);
     setRunning(true);
     setStatus("Sending");
@@ -324,35 +345,71 @@ export function ChatScreen({
     try {
       sessionId = await begin(sessionId);
       localId.current += 1;
-      const optimistic: StoredMessage = {
-        id: `local-${localId.current}`,
-        sessionId,
-        seq: -1,
-        role: "user",
-        content: content || "Look at the attached files.",
-        toolCalls: null,
-        toolCallId: null,
-        toolName: null,
-        reasoning: null,
-        attachments: attachments.map((file, index) => ({
-          id: `local-file-${index}`,
-          name: file.name,
-          mediaType: file.mediaType,
-          kind: file.dataUrl ? "image" : "text",
-          text: file.text,
-          dataUrl: file.dataUrl,
-        })),
-        createdAt: 0,
-      };
-      const files = attachments;
-      setDraft("");
-      setAttachments([]);
+      const pending = findPendingQuestion(messages);
+      const answerText = content || "Look at the attached files.";
+      const answered = pending ? askAnswerPayload(pending.options, answerText) : null;
+      const optimistic: StoredMessage[] = [];
+      if (pending && answered) {
+        optimistic.push({
+          id: `local-tool-${localId.current}`,
+          sessionId,
+          seq: -1,
+          role: "tool",
+          content: JSON.stringify(answered, null, 2),
+          toolCalls: null,
+          toolCallId: pending.call.id,
+          toolName: "ask_user",
+          reasoning: null,
+          attachments: [],
+          createdAt: Date.now(),
+        });
+      }
+      if (!pending || files.length > 0) {
+        optimistic.push({
+          id: `local-${localId.current}`,
+          sessionId,
+          seq: -1,
+          role: "user",
+          content: answered?.answer ?? answerText,
+          toolCalls: null,
+          toolCallId: null,
+          toolName: null,
+          reasoning: null,
+          attachments: files.map((file, index) => ({
+            id: `local-file-${index}`,
+            name: file.name,
+            mediaType: file.mediaType,
+            kind: file.dataUrl ? "image" : "text",
+            text: file.text,
+            dataUrl: file.dataUrl,
+          })),
+          createdAt: Date.now(),
+        });
+      }
       await runChat(sessionId, { content, attachments: files }, optimistic);
     } catch (err) {
       setRunning(false);
       setLive(null);
       setStreamError(err instanceof Error ? err.message : "The turn failed.");
+    } finally {
+      sendingRef.current = false;
     }
+  }
+
+  function send() {
+    const content = draft.trim();
+    const files = attachments;
+    if ((!content && files.length === 0) || running) return;
+    setDraft("");
+    setAttachments([]);
+    void submit(content, files);
+  }
+
+  function chooseDirection(label: string) {
+    if (running || sendingRef.current) return;
+    setDraft("");
+    document.getElementById("composer")?.focus();
+    void submit(label, []);
   }
 
   async function steer() {
@@ -465,6 +522,7 @@ export function ChatScreen({
         : threadDetail?.title;
   const headerTitle = headerSource && headerSource !== "New session" ? headerSource : "Meridian";
   const threadMessages = ownsThread ? messages : [];
+  const pendingQuestion = ownsThread ? findPendingQuestion(threadMessages) : null;
   if (threadDetail && modelFor !== threadDetail.id) {
     setModelFor(threadDetail.id);
     setModelDraft(threadDetail.model);
@@ -604,6 +662,8 @@ export function ChatScreen({
           compactedSummary={threadDetail?.compactedSummary ?? null}
           loading={Boolean(activeSessionId) && !ownsThread && !threadError}
           error={threadError}
+          pendingToolCallId={pendingQuestion?.call.id ?? null}
+          onAnswer={pendingQuestion && !running ? chooseDirection : undefined}
           onRetry={() => {
             if (activeSessionId) void load(activeSessionId);
           }}
@@ -640,6 +700,7 @@ export function ChatScreen({
           running={running}
           status={status}
           disabledReason={disabledReason}
+          awaitingQuestion={Boolean(pendingQuestion)}
           chatMode={detail?.chatMode ?? "agent"}
           skills={skills}
           tools={toolCatalog}

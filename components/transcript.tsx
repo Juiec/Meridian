@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronRight } from "lucide-react";
 
 import { MarkdownText } from "@/components/markdown-text";
+import { isQuestionPart, QuestionCard } from "@/components/question-card";
 import { groupMessages, type ToolPart } from "@/lib/group-messages";
 import type { StoredMessage } from "@/lib/types";
 import { cn } from "cn";
@@ -38,6 +39,8 @@ export function Transcript({
   error,
   onRetry,
   empty,
+  pendingToolCallId,
+  onAnswer,
 }: {
   messages: StoredMessage[];
   live: { parts: LivePart[]; status: string } | null;
@@ -46,6 +49,8 @@ export function Transcript({
   error: string | null;
   onRetry: () => void;
   empty: React.ReactNode;
+  pendingToolCallId?: string | null;
+  onAnswer?: (label: string) => void;
 }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
@@ -134,7 +139,11 @@ export function Transcript({
                 part.kind === "text" ? (
                   <MarkdownText key={`${item.id}-text-${index}`} text={part.text} />
                 ) : (
-                  <ToolCard key={part.id || `${item.id}-tool-${index}`} part={part} />
+                  <ToolOrQuestion
+                    key={part.id || `${item.id}-tool-${index}`}
+                    part={part}
+                    onAnswer={part.id === pendingToolCallId ? onAnswer : undefined}
+                  />
                 ),
               )}
             </article>
@@ -150,7 +159,7 @@ export function Transcript({
                 return <Thinking key={`live-r-${index}`} text={part.text} streaming detail={live.status} />;
               }
               if (part.kind === "text") return <MarkdownText key={`live-t-${index}`} text={part.text} />;
-              return <ToolCard key={part.id || `live-tool-${index}`} part={part} />;
+              return <ToolOrQuestion key={part.id || `live-tool-${index}`} part={part} />;
             })}
           </article>
         ) : null}
@@ -265,6 +274,11 @@ function Thinking({
       ) : null}
     </div>
   );
+}
+
+function ToolOrQuestion({ part, onAnswer }: { part: ToolPart; onAnswer?: (label: string) => void }) {
+  if (isQuestionPart(part)) return <QuestionCard part={part} onAnswer={onAnswer} />;
+  return <ToolCard part={part} />;
 }
 
 function ToolCard({ part }: { part: ToolPart }) {

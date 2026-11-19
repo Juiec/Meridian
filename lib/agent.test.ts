@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { runTurn } from "@/lib/agent";
 import type { CompletionDelta, CompletionRequest } from "@/lib/lmstudio";
 import { createSkill } from "@/lib/skill-store";
-import { createSession, deleteSession, getSession, insertMessage, listMessages, listSessions } from "@/lib/sessions";
+import { createSession, deleteSession, getSession, insertMessage, listMessages, listSessions, sessionMarkdown } from "@/lib/sessions";
 import { makeHome } from "@/lib/test-home";
 import type { AgentEvent } from "@/lib/types";
 
@@ -271,6 +271,7 @@ describe("agent loop", () => {
     expect(names).not.toContain("memory");
     expect(names).not.toContain("delegate");
     expect(names).not.toContain("image_generate");
+    expect(names).not.toContain("ask_user");
     expect(names).not.toContain("travel_plan");
     expect(String(seen[0]?.messages[0]?.content)).toContain("Mode: Ask");
     expect(getSession(session.id)?.chatMode).toBe("ask");
@@ -311,6 +312,7 @@ describe("agent loop", () => {
     expect(planTools).not.toContain("image_generate");
     expect(planTools).not.toContain("delegate");
     expect(planTools).toContain("fetch_url");
+    expect(planTools).toContain("ask_user");
     expect(getSession(session.id)?.chatMode).toBe("plan");
     const blocked = events.find((event) => event.type === "tool_result");
     expect(blocked).toMatchObject({ type: "tool_result", ok: false });
@@ -357,6 +359,7 @@ describe("agent loop", () => {
     expect(agentTools).toContain("memory");
     expect(agentTools).toContain("delegate");
     expect(agentTools).toContain("image_generate");
+    expect(agentTools).not.toContain("ask_user");
     expect(getSession(session.id)?.chatMode).toBe("agent");
     const userFile = readFileSync(path.join(process.env.MERIDIAN_HOME ?? "", "data", "memory", "USER.md"), "utf8");
     expect(userFile).toContain("Prefers short answers.");
@@ -436,6 +439,7 @@ describe("agent loop", () => {
     expect(listMessages(childId).some((message) => message.content.includes("epochMs"))).toBe(true);
     expect(childToolNames[0]).toContain("current_time");
     expect(childToolNames[0]).not.toContain("delegate");
+    expect(childToolNames[0]).not.toContain("ask_user");
     expect(events.some((event) => event.type === "subagent" && event.detail.includes("Kyoto weather"))).toBe(true);
 
     deleteSession(session.id);
@@ -481,5 +485,244 @@ describe("agent loop", () => {
     const steer = events.findIndex((event) => event.type === "user" && event.message.content.includes("pears"));
     expect(partial).toBeGreaterThanOrEqual(0);
     expect(steer).toBeGreaterThan(partial);
+  });
+
+  it("pauses a plan for one question and resumes with the chosen direction", async () => {
+    const session = createSession();
+    const events: AgentEvent[] = [];
+    let calls = 0;
+    const question = {
+      prompt: "Which launch shape should the plan follow?",
+      options: [
+        { label: "A quiet beta for the existing users", value: "beta" },
+        { label: "A public launch next month", value: "public" },
+      ],
+    };
+    await runTurn({
+      sessionId: session.id,
+      content: "/plan Plan the launch. Two directions are plausible.",
+      emit: (event) => events.push(event),
+      complete: scripted((request, call) => {
+        calls = call;
+        expect((request.tools ?? []).map((tool) => tool.function.name)).toContain("ask_user");
+        expect(String(request.messages[0]?.content)).toContain("call ask_user");
+        return [
+          {
+            type: "tool_delta",
+            index: 0,
+            id: "call_ask",
+            name: "ask_user",
+            arguments: JSON.stringify(question),
+          },
+          { type: "finish", reason: "tool_calls" },
+        ];
+      }),
+    });
+
+    expect(calls).toBe(1);
+    expect(events.some((event) => event.type === "question" && event.prompt === question.prompt)).toBe(true);
+    expect(events.some((event) => event.type === "done" && event.awaiting === "question")).toBe(true);
+    expect(listMessages(session.id).some((message) => message.role === "tool")).toBe(false);
+    expect(listMessages(session.id).some((message) => message.content.includes("quiet beta"))).toBe(false);
+
+    const seen: string[] = [];
+    await runTurn({
+      sessionId: session.id,
+      content: "A quiet beta for the existing users",
+      emit: (event) => events.push(event),
+      complete: scripted((request) => {
+        seen.push(request.messages.map((message) => `${message.role}:${String(message.content ?? "")}`).join("\n"));
+        return [
+          { type: "text", text: "Plan: ship a quiet beta to the existing users." },
+          { type: "finish", reason: "stop" },
+        ];
+      }),
+    });
+
+    expect(seen[0]).toContain("A quiet beta for the existing users");
+    expect(seen[0]).toContain('"option": "beta"');
+    const userTurns = listMessages(session.id).filter((message) => message.role === "user");
+    expect(userTurns).toHaveLength(1);
+    expect(userTurns[0]?.content).toContain("Two directions");
+    const tool = listMessages(session.id).find((message) => message.toolName === "ask_user");
+    expect(tool?.content).toContain("quiet beta");
+    expect(tool?.content).toContain('"option": "beta"');
+    expect(listMessages(session.id).some((message) => message.content.includes("ship a quiet beta"))).toBe(true);
+    const done = events.filter((event) => event.type === "done");
+    expect(done.at(-1)).toMatchObject({ type: "done" });
+    expect(done.at(-1)).not.toMatchObject({ awaiting: "question" });
+    const markdown = sessionMarkdown(getSession(session.id)!, listMessages(session.id));
+    expect(markdown).toContain("Which launch shape should the plan follow?");
+    expect(markdown).toContain("A quiet beta for the existing users");
+  });
+
+  it("resumes planning when the user types their own direction", async () => {
+    const session = createSession();
+    await runTurn({
+      sessionId: session.id,
+      content: "/plan Plan the launch.",
+      emit: () => undefined,
+      complete: scripted(() => [
+        {
+          type: "tool_delta",
+          index: 0,
+          id: "call_ask",
+          name: "ask_user",
+          arguments: JSON.stringify({
+            prompt: "Which launch shape should the plan follow?",
+            options: [
+              { label: "A quiet beta for the existing users", value: "beta" },
+              { label: "A public launch next month", value: "public" },
+            ],
+          }),
+        },
+        { type: "finish", reason: "tool_calls" },
+      ]),
+    });
+
+    let sawCustom = false;
+    await runTurn({
+      sessionId: session.id,
+      content: "Hold the launch until the editor is ready",
+      emit: () => undefined,
+      complete: scripted((request) => {
+        const blob = request.messages.map((message) => String(message.content ?? "")).join("\n");
+        sawCustom = blob.includes("Hold the launch until the editor is ready") && blob.includes('"option": null');
+        return [{ type: "text", text: "Plan: wait for the editor." }, { type: "finish", reason: "stop" }];
+      }),
+    });
+
+    expect(sawCustom).toBe(true);
+    expect(listMessages(session.id).filter((message) => message.role === "user")).toHaveLength(1);
+    expect(listMessages(session.id).some((message) => message.content.includes("wait for the editor"))).toBe(true);
+  });
+
+  it("does not pause when the question is not a real choice", async () => {
+    const session = createSession();
+    const events: AgentEvent[] = [];
+    let calls = 0;
+    await runTurn({
+      sessionId: session.id,
+      content: "/plan Plan the launch.",
+      emit: (event) => events.push(event),
+      complete: scripted((_request, call) => {
+        calls = call;
+        if (call === 1) {
+          return [
+            {
+              type: "tool_delta",
+              index: 0,
+              id: "call_ask",
+              name: "ask_user",
+              arguments: JSON.stringify({
+                prompt: "Which way?",
+                options: [{ label: "Only one direction" }],
+              }),
+            },
+            { type: "finish", reason: "tool_calls" },
+          ];
+        }
+        return [{ type: "text", text: "Plan: ship the quiet beta." }, { type: "finish", reason: "stop" }];
+      }),
+    });
+
+    expect(calls).toBe(2);
+    expect(events.some((event) => event.type === "question")).toBe(false);
+    const result = events.find((event) => event.type === "tool_result");
+    expect(result).toMatchObject({ type: "tool_result", ok: false });
+    if (result?.type === "tool_result") expect(result.content).toContain("2 to 4 options");
+    expect(listMessages(session.id).some((message) => message.content.includes("quiet beta"))).toBe(true);
+  });
+
+  it("keeps agent mode moving when the model calls ask_user", async () => {
+    const session = createSession();
+    const events: AgentEvent[] = [];
+    let calls = 0;
+    let tools: string[] = [];
+    await runTurn({
+      sessionId: session.id,
+      content: "Plan the launch and just do it.",
+      emit: (event) => events.push(event),
+      complete: scripted((request, call) => {
+        calls = call;
+        tools = (request.tools ?? []).map((tool) => tool.function.name);
+        if (call === 1) {
+          return [
+            {
+              type: "tool_delta",
+              index: 0,
+              id: "call_ask",
+              name: "ask_user",
+              arguments: JSON.stringify({
+                prompt: "Which launch shape should the plan follow?",
+                options: [
+                  { label: "A quiet beta for the existing users", value: "beta" },
+                  { label: "A public launch next month", value: "public" },
+                ],
+              }),
+            },
+            { type: "finish", reason: "tool_calls" },
+          ];
+        }
+        return [{ type: "text", text: "I'll ship the quiet beta." }, { type: "finish", reason: "stop" }];
+      }),
+    });
+
+    expect(tools).not.toContain("ask_user");
+    expect(calls).toBe(2);
+    expect(events.some((event) => event.type === "question")).toBe(false);
+    const result = events.find((event) => event.type === "tool_result");
+    expect(result).toMatchObject({ type: "tool_result", ok: false });
+    if (result?.type === "tool_result") expect(result.content).toContain("only available in Plan mode");
+  });
+
+  it("runs an earlier lookup and then pauses on the question", async () => {
+    const session = createSession();
+    const events: AgentEvent[] = [];
+    await runTurn({
+      sessionId: session.id,
+      content: "/plan Check the time, then ask which day to plan.",
+      emit: (event) => events.push(event),
+      complete: scripted(() => [
+        {
+          type: "tool_delta",
+          index: 0,
+          id: "call_time",
+          name: "current_time",
+          arguments: "{}",
+        },
+        {
+          type: "tool_delta",
+          index: 1,
+          id: "call_ask",
+          name: "ask_user",
+          arguments: JSON.stringify({
+            prompt: "Which day should the plan cover?",
+            options: [
+              { label: "Today only", value: "today" },
+              { label: "The rest of the week", value: "week" },
+            ],
+          }),
+        },
+        {
+          type: "tool_delta",
+          index: 2,
+          id: "call_later",
+          name: "current_time",
+          arguments: "{}",
+        },
+        { type: "finish", reason: "tool_calls" },
+      ]),
+    });
+
+    expect(events.some((event) => event.type === "question")).toBe(true);
+    expect(events.some((event) => event.type === "done" && event.awaiting === "question")).toBe(true);
+    const results = listMessages(session.id).filter((message) => message.role === "tool");
+    expect(results).toHaveLength(2);
+    expect(results[0]?.toolCallId).toBe("call_time");
+    expect(results[0]?.content).toContain("utc");
+    expect(results[1]?.toolCallId).toBe("call_later");
+    expect(results[1]?.content).toContain("Skipped because a clarifying question is waiting.");
+    expect(listMessages(session.id).some((message) => message.toolCallId === "call_ask")).toBe(false);
   });
 });
