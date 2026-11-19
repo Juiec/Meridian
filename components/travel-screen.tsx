@@ -10,7 +10,8 @@ import { SidebarToggle } from "@/components/sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { groupPlaces } from "@/lib/travel-math";
-import { MAX_TRIP_DAYS, type FareQuote, type TravelPublicSettings, type TripKind, type TripLeg, type TripPlace } from "@/lib/travel-types";
+import { MAX_TRIP_DAYS, TRIP_KIND_COLORS, type FareQuote, type TravelPublicSettings, type TripKind, type TripLeg, type TripPlace } from "@/lib/travel-types";
+import { cn } from "cn";
 
 const TripMap = dynamic(() => import("@/components/trip-map").then((mod) => mod.TripMap), {
   ssr: false,
@@ -216,14 +217,14 @@ export function TravelScreen() {
                 <p className="mt-1 text-xs text-muted-foreground">Scroll to zoom · drag to move</p>
               </div>
               <ul aria-label="Map legend" className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
-                {[
-                  ["Destination", "#c47a3a"],
-                  ["Stay", "#6a8f72"],
-                  ["Place", "#8d7355"],
-                  ["Transit", "#9a8f80"],
-                ].map(([label, color]) => (
-                  <li key={label} className="flex items-center gap-1.5">
-                    <span className="size-2 rounded-full" style={{ backgroundColor: color }} aria-hidden />
+                {([
+                  ["destination", "Destination"],
+                  ["stay", "Stay"],
+                  ["poi", "Place"],
+                  ["transit", "Transit"],
+                ] as const).map(([kind, label]) => (
+                  <li key={kind} className="flex items-center gap-1.5">
+                    <span className="size-2 rounded-full" style={{ backgroundColor: TRIP_KIND_COLORS[kind] }} aria-hidden />
                     {label}
                   </li>
                 ))}
@@ -365,8 +366,15 @@ export function TravelScreen() {
                     <span className="ml-2">
                       {quote.price} {quote.currency}
                     </span>
-                    <span className="ml-2 text-[11px] tracking-wide text-muted-foreground uppercase">
-                      {quote.live ? "Live" : "Not live"}
+                    <span
+                      className={cn(
+                        "ml-2 rounded-full px-2 py-0.5 text-[10px] font-medium tracking-wide uppercase",
+                        quote.live
+                          ? "bg-sage/15 text-sage"
+                          : "bg-muted text-muted-foreground",
+                      )}
+                    >
+                      {quote.live ? "Live" : "Illustrative"}
                     </span>
                     <p className="mt-1 text-xs leading-5 text-muted-foreground">{quote.note}</p>
                     {quote.link ? (

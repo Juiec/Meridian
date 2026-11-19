@@ -18,6 +18,12 @@ export function memoryDir(): string {
   return dir;
 }
 
+export function imagesDir(): string {
+  const dir = path.join(dataDir(), "images");
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
 export function skillsDir(): string {
   return path.join(meridianHome(), "skills");
 }

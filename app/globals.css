@@ -66,7 +66,7 @@
   --muted-foreground: oklch(0.48 0.02 65);
   --accent: oklch(0.92 0.02 80);
   --accent-foreground: oklch(0.28 0.02 60);
-  --destructive: oklch(0.55 0.16 30);
+  --destructive: oklch(0.5 0.16 30);
   --border: oklch(0.86 0.02 80);
   --input: oklch(0.86 0.02 80);
   --ring: oklch(0.58 0.12 55);
@@ -133,5 +133,28 @@
   }
   html {
     @apply font-sans;
+  }
+  p {
+    text-wrap: pretty;
+  }
+  /* One visible focus treatment for bare controls that have no component ring. */
+  :where(button, a, select, summary, input[type="checkbox"]):not([data-slot]):focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: color-mix(in oklch, var(--copper) 30%, transparent);
+  }
+}
+
+/* Reduced motion: keep state changes, remove the movement. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

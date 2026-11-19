@@ -14,6 +14,7 @@ describe("skills", () => {
     expect(names).toEqual([
       "code-explain",
       "daily-planning",
+      "image",
       "itinerary-day",
       "packing-list",
       "prompt-refine",

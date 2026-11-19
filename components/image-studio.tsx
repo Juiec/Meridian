@@ -9,7 +9,7 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 
 import { readJson } from "@/components/client-api";
 import { useAppState } from "@/components/app-state";
@@ -33,6 +33,23 @@ type GeneratedImage = {
   revised_prompt?: string;
 };
 
+type StoredImage = {
+  id: string;
+  url: string;
+  prompt: string;
+  model: string;
+  sessionTitle: string | null;
+  mediaType: string;
+  createdAt: number;
+};
+
+async function fetchSavedImages(): Promise<StoredImage[]> {
+  const data = await readJson<{ images: StoredImage[] }>(
+    await fetch("/api/images?limit=24", { cache: "no-store" }),
+  );
+  return data.images ?? [];
+}
+
 export function ImageStudio() {
   const openSidebar = useOpenSidebar();
   const { settings } = useAppState();
@@ -50,7 +67,34 @@ export function ImageStudio() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [images, setImages] = useState<GeneratedImage[]>([]);
+  const [savedImages, setSavedImages] = useState<StoredImage[]>([]);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+
+  const loadHistory = useCallback(async () => {
+    try {
+      setSavedImages(await fetchSavedImages());
+      setHistoryError(null);
+    } catch (err) {
+      setHistoryError(err instanceof Error ? err.message : "Could not load saved images.");
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const loaded = await fetchSavedImages();
+        if (cancelled) return;
+        setSavedImages(loaded);
+        setHistoryError(null);
+      } catch (err) {
+        if (cancelled) return;
+        setHistoryError(err instanceof Error ? err.message : "Could not load saved images.");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => () => {
     if (previewUrl.current) URL.revokeObjectURL(previewUrl.current);
@@ -126,7 +170,8 @@ export function ImageStudio() {
       const received = result.data?.filter((image) => image.b64_json || image.url) ?? [];
       if (received.length === 0) throw new Error("OpenAI returned no images.");
       setImages(received);
-      setStatus(`${received.length} image${received.length === 1 ? "" : "s"} ready.`);
+      setStatus(`${received.length} image${received.length === 1 ? "" : "s"} ready. Saved to the backend image log.`);
+      void loadHistory();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Image generation failed.");
     } finally {
@@ -219,7 +264,7 @@ export function ImageStudio() {
               <div className="mb-2 flex items-center justify-between">
                 <label htmlFor="edit-image" className="text-sm font-medium">Edit an image <span className="font-normal text-muted-foreground">· optional</span></label>
                 {editImage ? (
-                  <button type="button" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground" onClick={() => selectEditImage(null)}>
+                  <button type="button" className="inline-flex items-center gap-1 rounded-sm text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline" onClick={() => selectEditImage(null)}>
                     <X className="size-3" /> Remove
                   </button>
                 ) : null}
@@ -389,6 +434,57 @@ export function ImageStudio() {
                 <div className="absolute right-4 bottom-4 font-mono text-[9px] tracking-[0.16em] text-white/50 uppercase">01 / awaiting input</div>
               </div>
             )}
+
+            <div className="mt-10 border-t border-border pt-6">
+              <div className="flex items-baseline justify-between gap-3">
+                <div>
+                  <p className="text-[10px] tracking-[0.2em] text-muted-foreground uppercase">Backend log</p>
+                  <h3 className="mt-1 font-display text-xl">Saved images</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void loadHistory()}
+                  className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                >
+                  Refresh
+                </button>
+              </div>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                Stored with prompt, model, and chat — like the message log. Images from /image in chat land here too.
+              </p>
+              {historyError ? (
+                <p role="alert" className="mt-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                  {historyError}
+                </p>
+              ) : null}
+              {savedImages.length > 0 ? (
+                <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 2xl:grid-cols-4">
+                  {savedImages.map((image) => (
+                    <article key={image.id} className="overflow-hidden rounded-xl border border-border bg-card">
+                      <a href={image.url} target="_blank" rel="noreferrer" className="block">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={image.url}
+                          alt={image.prompt}
+                          loading="lazy"
+                          className="aspect-square w-full object-contain"
+                        />
+                      </a>
+                      <div className="space-y-1 px-2.5 py-2">
+                        <p className="line-clamp-2 text-xs leading-4" title={image.prompt}>{image.prompt}</p>
+                        <p className="truncate font-mono text-[10px] text-muted-foreground">
+                          {image.sessionTitle || "Studio"} · {image.model.slice(0, 28)}
+                        </p>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-4 text-sm text-muted-foreground">
+                  No saved images yet. Generate one here, or type <span className="font-mono text-foreground">/image</span> in a chat.
+                </p>
+              )}
+            </div>
           </section>
         </div>
       </div>

@@ -30,13 +30,13 @@ function scripted(handler: (request: CompletionRequest, call: number) => Complet
 }
 
 describe("agent loop", () => {
-  it("generates a high-level chat title before answering the first request", async () => {
+  it("names the chat after the first answer is complete", async () => {
     const session = createSession();
     const events: AgentEvent[] = [];
     const requests: CompletionRequest[] = [];
     const complete = async function* (request: CompletionRequest) {
       requests.push(request);
-      if (requests.length === 1) {
+      if (String(request.messages[0]?.content ?? "").startsWith("Create a concise, high-level title")) {
         yield { type: "text" as const, text: "Title: Planning a three-week Japan itinerary" };
         yield { type: "finish" as const, reason: "stop" };
         return;
@@ -52,21 +52,27 @@ describe("agent loop", () => {
       complete,
     });
 
-    expect(requests[0]?.tools).toBeUndefined();
+    expect(requests[0]?.tools).toBeDefined();
     expect(requests[0]?.messages[1]?.content).toContain("21 days");
-    expect(requests[1]?.messages.some((message) => message.role === "user" && String(message.content).includes("21 days"))).toBe(true);
+    expect(requests[1]?.tools).toBeUndefined();
+    expect(requests[1]?.messages[1]?.content).toContain("21 days");
     expect(getSession(session.id)?.title).toBe("Planning a three-week Japan itinerary");
-    expect(events.findIndex((event) => event.type === "title")).toBeGreaterThan(events.findIndex((event) => event.type === "user"));
-    expect(events.findIndex((event) => event.type === "title")).toBeLessThan(events.findIndex((event) => event.type === "iteration"));
+    const answerIndex = events.findIndex((event) => event.type === "delta" && event.text.includes("itinerary"));
+    const titleIndex = events.findIndex((event) => event.type === "title");
+    const doneIndex = events.findIndex((event) => event.type === "done");
+    expect(answerIndex).toBeGreaterThanOrEqual(0);
+    expect(titleIndex).toBeGreaterThan(answerIndex);
+    expect(titleIndex).toBeLessThan(doneIndex);
+    expect(events[titleIndex]).toMatchObject({ type: "title", title: "Planning a three-week Japan itinerary" });
   });
 
-  it("reports title generation errors without blocking the chat response", async () => {
+  it("falls back to the first message when naming fails after the answer", async () => {
     const session = createSession();
     const events: AgentEvent[] = [];
     let call = 0;
     const complete = async function* () {
       call += 1;
-      if (call === 1) throw new Error("title service unavailable");
+      if (call === 2) throw new Error("title service unavailable");
       yield { type: "text" as const, text: "The chat still works." };
       yield { type: "finish" as const, reason: "stop" };
     };
@@ -78,8 +84,9 @@ describe("agent loop", () => {
       complete,
     });
 
-    expect(getSession(session.id)?.title).toBe("New session");
+    expect(getSession(session.id)?.title).toBe("Help me compare two apartments for a move next month.");
     expect(events.some((event) => event.type === "title_error" && event.message.includes("title service unavailable"))).toBe(true);
+    expect(events.some((event) => event.type === "title" && event.title === "Help me compare two apartments for a move next month.")).toBe(true);
     expect(listMessages(session.id).some((message) => message.content === "The chat still works.")).toBe(true);
   });
 

@@ -1,6 +1,14 @@
 export type TripKind = "destination" | "stay" | "poi" | "transit";
 export const MAX_TRIP_DAYS = 365;
 
+/** Marker + legend colors. One source so the map and the key cannot drift. */
+export const TRIP_KIND_COLORS: Record<TripKind, string> = {
+  destination: "#c47a3a",
+  stay: "#6a8f72",
+  poi: "#8d7355",
+  transit: "#9a8f80",
+};
+
 export type TripPlace = {
   id: string;
   name: string;

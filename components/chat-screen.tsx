@@ -44,6 +44,7 @@ export function ChatScreen({
   const [focusTick, setFocusTick] = useState(0);
   const [appliedSeed, setAppliedSeed] = useState<string | null>(null);
   const [detail, setDetail] = useState<SessionRecord | null>(null);
+  const [titleOverride, setTitleOverride] = useState<{ sessionId: string; title: string } | null>(null);
   const [messages, setMessages] = useState<StoredMessage[]>([]);
   const [threadError, setThreadError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -112,6 +113,7 @@ export function ChatScreen({
 
   function applyEvent(event: AgentEvent, sessionId: string) {
     if (event.type === "title") {
+      setTitleOverride({ sessionId, title: event.title });
       setDetail((current) =>
         current?.id === sessionId ? { ...current, title: event.title, updatedAt: Date.now() } : current,
       );
@@ -258,6 +260,8 @@ export function ChatScreen({
           name: file.name,
           mediaType: file.mediaType,
           kind: file.dataUrl ? "image" : "text",
+          text: file.text,
+          dataUrl: file.dataUrl,
         })),
         createdAt: 0,
       };
@@ -337,9 +341,11 @@ export function ChatScreen({
   const threadDetail = detail?.id === activeSessionId ? detail : null;
   const activeSummary = sessions.find((session) => session.id === activeSessionId);
   const headerSource =
-    activeSummary && (!threadDetail || activeSummary.updatedAt >= threadDetail.updatedAt)
-      ? activeSummary.title
-      : threadDetail?.title;
+    titleOverride?.sessionId === activeSessionId
+      ? titleOverride.title
+      : activeSummary && (!threadDetail || activeSummary.updatedAt >= threadDetail.updatedAt)
+        ? activeSummary.title
+        : threadDetail?.title;
   const headerTitle = headerSource && headerSource !== "New session" ? headerSource : "Meridian";
   const threadMessages = ownsThread ? messages : [];
   if (threadDetail && modelFor !== threadDetail.id) {
@@ -378,7 +384,7 @@ export function ChatScreen({
             <p className="truncate font-display text-xl leading-none">
               {embedded ? "Trip conversation" : headerTitle}
             </p>
-            <p className="truncate text-[11px] text-muted-foreground">
+            <p className="truncate text-xs text-muted-foreground">
               {embedded
                 ? "Separate from your chat sessions"
                 : threadDetail

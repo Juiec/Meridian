@@ -1,5 +1,6 @@
 import { attachmentNote, parseStoredAttachments, prepareAttachments, type IncomingAttachment } from "@/lib/attachments";
 import { db } from "@/lib/db";
+import { deleteImagesForSession } from "@/lib/image-store";
 import { readEntries } from "@/lib/memory";
 import { assembleSystemPrompt } from "@/lib/prompt";
 import { getSettings } from "@/lib/settings";
@@ -255,6 +256,7 @@ export function updateSessionTitleIfDefault(id: string, title: string): SessionR
 }
 
 export function deleteSession(id: string): boolean {
+  deleteImagesForSession(id);
   const result = db().prepare("DELETE FROM sessions WHERE id = ?").run(id);
   return result.changes > 0;
 }

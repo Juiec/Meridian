@@ -38,7 +38,7 @@ export function Inspector({
       )}
     >
       <div className="flex items-center justify-between px-4 py-3">
-        <h2 className="text-sm font-medium tracking-wide uppercase">Desk</h2>
+        <h2 className="text-base font-medium tracking-wide uppercase">Desk</h2>
         <Button type="button" variant="ghost" size="icon-sm" className="xl:hidden" aria-label="Close desk" onClick={onClose}>
           <X />
         </Button>
@@ -214,7 +214,14 @@ function MemoryEditor({
           {used}/{limit}
         </span>
       </div>
-      <div className="mt-2 h-1 overflow-hidden rounded-full bg-muted">
+      <div
+        className="mt-2 h-1 overflow-hidden rounded-full bg-muted"
+        role="progressbar"
+        aria-label={`${title} used`}
+        aria-valuemin={0}
+        aria-valuemax={limit}
+        aria-valuenow={used}
+      >
         <div className={cn("h-full bg-copper", pct > 80 && "bg-destructive")} style={{ width: `${pct}%` }} />
       </div>
       <p className="mt-2 text-xs leading-5 text-muted-foreground">{hint}</p>

@@ -40,6 +40,26 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 
 CREATE INDEX IF NOT EXISTS messages_session_seq ON messages(session_id, seq);
+
+CREATE TABLE IF NOT EXISTS images (
+  id TEXT PRIMARY KEY,
+  session_id TEXT,
+  tool_call_id TEXT,
+  prompt TEXT NOT NULL,
+  revised_prompt TEXT,
+  model TEXT NOT NULL DEFAULT '',
+  endpoint_id TEXT NOT NULL DEFAULT '',
+  size TEXT NOT NULL DEFAULT 'auto',
+  file_name TEXT,
+  media_type TEXT NOT NULL DEFAULT 'image/png',
+  byte_size INTEGER NOT NULL DEFAULT 0,
+  source TEXT NOT NULL DEFAULT 'generate',
+  source_url TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS images_session_created ON images(session_id, created_at DESC);
 `;
 
 function columnNames(database: DatabaseSync, table: string): Set<string> {

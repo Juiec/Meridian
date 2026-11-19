@@ -1,4 +1,5 @@
 import { fetchPublicUrl } from "@/lib/fetch-url";
+import { generateImages, ImageRequestError } from "@/lib/image-generator";
 import { applyMemory, MEMORY_LIMITS, type MemoryOp, type MemoryTarget } from "@/lib/memory";
 import { discoverSkills, readSkillFile } from "@/lib/skills";
 import { executeTravelTool } from "@/lib/travel";
@@ -100,6 +101,32 @@ export const TOOLS: ToolDefinition[] = [
       name: "current_time",
       description: "Return the server clock as UTC and local time. Use when the answer depends on the actual time.",
       parameters: { type: "object", additionalProperties: false, properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "image_generate",
+      description:
+        "Create images from a text prompt using the saved OpenAI-compatible Images endpoint. Every image is saved under data/images with a record in the backend image log, like a chat message. Use it when the user asks for an image, or after /image. Returns image ids and /api/images/<id> links; use only the links the tool returns.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          prompt: {
+            type: "string",
+            description: "Detailed description of the image to create.",
+          },
+          size: {
+            type: "string",
+            description: 'Optional: "auto", "1024x1024", "1536x1024", "1024x1536", or WIDTHxHEIGHT (256-4096, multiples of 16).',
+          },
+          n: { type: "integer", minimum: 1, maximum: 10, description: "How many images, 1 to 10. Defaults to 1." },
+          endpointId: { type: "string", description: "Optional saved endpoint id. Defaults to this chat's endpoint." },
+          model: { type: "string", description: "Optional image model id. Defaults to the endpoint's model." },
+        },
+        required: ["prompt"],
+      },
     },
   },
   {
@@ -249,7 +276,16 @@ function memoryOps(value: unknown): MemoryOp[] | { error: string } {
   return ops;
 }
 
-export async function executeTool(name: string, rawArgs: string): Promise<Record<string, unknown>> {
+export type ToolContext = {
+  sessionId?: string;
+  toolCallId?: string;
+};
+
+export async function executeTool(
+  name: string,
+  rawArgs: string,
+  context: ToolContext = {},
+): Promise<Record<string, unknown>> {
   const parsed = parseToolArguments(rawArgs);
   if (!parsed.ok) return { ok: false, error: parsed.error };
   const args = parsed.value;
@@ -297,6 +333,41 @@ export async function executeTool(name: string, rawArgs: string): Promise<Record
     const url = typeof args.url === "string" ? args.url : "";
     if (!url) return { ok: false, error: "fetch_url requires url." };
     return fetchPublicUrl(url);
+  }
+
+  if (name === "image_generate") {
+    const prompt = typeof args.prompt === "string" ? args.prompt.trim() : "";
+    if (!prompt) return { ok: false, error: "image_generate requires a prompt." };
+    const size = typeof args.size === "string" && args.size.trim() ? args.size.trim() : "auto";
+    const n = typeof args.n === "number" ? args.n : 1;
+    try {
+      const result = await generateImages({
+        prompt,
+        size,
+        count: n,
+        endpointId: typeof args.endpointId === "string" ? args.endpointId : undefined,
+        model: typeof args.model === "string" ? args.model : undefined,
+        sessionId: context.sessionId,
+        toolCallId: context.toolCallId,
+      });
+      return {
+        ok: true,
+        message: `Generated ${result.images.length} image${result.images.length === 1 ? "" : "s"} with ${result.endpointName}. Saved to the backend image log.`,
+        images: result.images.map((image) => ({
+          id: image.id,
+          url: image.url,
+          prompt: image.revisedPrompt || image.prompt,
+          size: image.size,
+          model: image.model,
+          createdAt: image.createdAt,
+        })),
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof ImageRequestError || error instanceof Error ? error.message : "Image generation failed.",
+      };
+    }
   }
 
   if (name === "current_time") {
