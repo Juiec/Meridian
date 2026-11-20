@@ -26,6 +26,7 @@ describe("tool registry", () => {
       custom: [
         { id: "c1", name: "memory", description: "Should not replace memory.", parameters: { type: "object" } },
         { id: "c2", name: "current_time", description: "Should not replace current_time.", parameters: { type: "object" } },
+        { id: "c4", name: "ask_user", description: "Should not replace the plan question.", parameters: { type: "object" } },
         {
           id: "c3",
           name: "echo",
@@ -45,6 +46,8 @@ describe("tool registry", () => {
     expect(bundle.routes.mcp_desk_ping_tool_2).toEqual({ source: "mcp", sourceId: "s2", remoteName: "ping_tool" });
     expect(bundle.routes.custom_memory).toEqual({ source: "custom", sourceId: "c1", remoteName: "memory" });
     expect(bundle.routes.custom_current_time.source).toBe("custom");
+    expect(bundle.routes.custom_ask_user).toEqual({ source: "custom", sourceId: "c4", remoteName: "ask_user" });
+    expect(names).not.toContain("ask_user");
     expect(bundle.routes.echo).toEqual({ source: "custom", sourceId: "c3", remoteName: "echo" });
     expect(names.every((name) => /^[a-z0-9_-]{1,64}$/.test(name))).toBe(true);
     expect(bundle.definitions.find((tool) => tool.function.name === "memory")?.function.description).toContain("MEMORY");

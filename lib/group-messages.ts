@@ -1,3 +1,4 @@
+import { ASK_USER_NAME } from "@/lib/ask-user";
 import type { StoredMessage, ToolCallRecord } from "@/lib/types";
 
 export type ToolPart = {
@@ -7,6 +8,8 @@ export type ToolPart = {
   arguments: string;
   result?: string;
   pending?: boolean;
+  /** Plan-mode ask_user is waiting for the user, not for a tool process. */
+  awaitingUser?: boolean;
   ok?: boolean;
   status?: string;
 };
@@ -70,6 +73,7 @@ export function groupMessages(messages: StoredMessage[]): TranscriptItem[] {
     if (part && part.kind === "tool") {
       part.result = message.content;
       part.pending = false;
+      part.awaitingUser = false;
       part.ok = toolOk(message.content);
     } else {
       current.parts.push({
@@ -88,12 +92,14 @@ export function groupMessages(messages: StoredMessage[]): TranscriptItem[] {
 }
 
 function toolPart(call: ToolCallRecord): ToolPart {
+  const awaitingUser = call.name === ASK_USER_NAME;
   return {
     kind: "tool",
     id: call.id,
     name: call.name,
     arguments: call.arguments,
-    pending: true,
+    pending: !awaitingUser,
+    awaitingUser,
   };
 }
 

@@ -4,7 +4,6 @@ import {
   ArrowDownToLine,
   ImagePlus,
   LoaderCircle,
-  Menu,
   Paintbrush,
   Sparkles,
   X,
@@ -13,7 +12,6 @@ import { useEffect, useRef, useState, useCallback } from "react";
 
 import { readJson } from "@/components/client-api";
 import { useAppState } from "@/components/app-state";
-import { useOpenSidebar } from "@/components/shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -51,7 +49,6 @@ async function fetchSavedImages(): Promise<StoredImage[]> {
 }
 
 export function ImageStudio() {
-  const openSidebar = useOpenSidebar();
   const { settings } = useAppState();
   const fileInput = useRef<HTMLInputElement>(null);
   const previewUrl = useRef<string | null>(null);
@@ -184,23 +181,23 @@ export function ImageStudio() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex items-center justify-between gap-3 border-b border-border px-4 py-3 md:px-6">
-        <div className="flex min-w-0 items-center gap-3">
-          <Button type="button" variant="ghost" size="icon-sm" className="md:hidden" aria-label="Open navigation" onClick={openSidebar}>
-            <Menu />
-          </Button>
-          <div className="min-w-0">
-            <p className="font-display text-2xl leading-none">Image Studio</p>
-            <p className="mt-1 text-xs text-muted-foreground">Choose a saved endpoint and image model.</p>
-          </div>
+        <div className="min-w-0">
+          <p className="font-display text-2xl leading-none">Image Studio</p>
+          <p className="mt-1 text-xs text-muted-foreground">Choose a saved endpoint and image model.</p>
         </div>
-        <Link href="/settings" className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
-          Manage endpoints
-        </Link>
+        <div className="flex shrink-0 items-center gap-3">
+          <Link href="/" className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+            Chats
+          </Link>
+          <Link href="/settings" className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+            Manage endpoints
+          </Link>
+        </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto grid min-h-full max-w-[1600px] grid-cols-1 xl:grid-cols-[minmax(19rem,24rem)_minmax(0,1fr)]">
-          <section aria-label="Image settings" className="border-b border-border p-5 md:p-7 xl:border-r xl:border-b-0">
+      <div className="@container/studio min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto grid min-h-full max-w-[1600px] grid-cols-1 @min-[760px]/studio:grid-cols-[minmax(19rem,24rem)_minmax(0,1fr)]">
+          <section aria-label="Image settings" className="border-b border-border p-5 md:p-7 @min-[760px]/studio:border-r @min-[760px]/studio:border-b-0">
             <div className="mb-6">
               <p className="text-[10px] tracking-[0.2em] text-copper uppercase">Prompt desk</p>
               <h1 className="mt-2 font-display text-3xl leading-tight">What do you see?</h1>
@@ -366,7 +363,7 @@ export function ImageStudio() {
             </Button>
           </section>
 
-          <section aria-label="Image results" className="flex min-h-[32rem] flex-col p-5 md:p-8 xl:min-h-0">
+          <section aria-label="Image results" className="flex min-h-[32rem] flex-col p-5 md:p-8 @min-[760px]/studio:min-h-0">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-[10px] tracking-[0.2em] text-muted-foreground uppercase">The canvas</p>

@@ -47,4 +47,35 @@ describe("groupMessages", () => {
       if (tool?.kind === "tool") expect(tool.ok).toBe(true);
     }
   });
+
+  it("keeps an unanswered plan question waiting instead of running", () => {
+    const items = groupMessages([
+      message({
+        id: "a",
+        seq: 1,
+        role: "assistant",
+        toolCalls: [
+          {
+            id: "q1",
+            name: "ask_user",
+            arguments: JSON.stringify({
+              prompt: "Which way?",
+              options: [
+                { label: "Stay in Kyoto", value: "kyoto" },
+                { label: "Add Osaka", value: "osaka" },
+              ],
+            }),
+          },
+        ],
+      }),
+    ]);
+    expect(items[0]?.kind).toBe("assistant");
+    if (items[0]?.kind !== "assistant") return;
+    const part = items[0].parts[0];
+    expect(part?.kind).toBe("tool");
+    if (part?.kind === "tool") {
+      expect(part.pending).toBe(false);
+      expect(part.awaitingUser).toBe(true);
+    }
+  });
 });

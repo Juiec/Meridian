@@ -1,3 +1,4 @@
+import { askAnswerPayload, findPendingQuestion, parseAskUser } from "@/lib/ask-user";
 import {
   COMPACT_SYSTEM,
   planCompaction,
@@ -367,7 +368,35 @@ export async function runTurn(input: {
     updateSession(input.sessionId, { chatMode: requestedMode });
   }
 
-  if (input.replay) {
+  const pending = input.replay ? null : findPendingQuestion(listMessages(input.sessionId));
+  if (pending) {
+    const answerText = content || "Look at the attached files.";
+    const answered = askAnswerPayload(pending.options, answerText);
+    const payload = JSON.stringify(answered, null, 2);
+    insertMessage({
+      sessionId: input.sessionId,
+      role: "tool",
+      content: payload,
+      toolCallId: pending.call.id,
+      toolName: "ask_user",
+    });
+    input.emit({
+      type: "tool_result",
+      toolCallId: pending.call.id,
+      name: "ask_user",
+      content: payload,
+      ok: true,
+    });
+    if (attachments.length > 0) {
+      const user = insertMessage({
+        sessionId: input.sessionId,
+        role: "user",
+        content: answered.answer,
+        attachments,
+      });
+      input.emit({ type: "user", message: user });
+    }
+  } else if (input.replay) {
     const existing = lastUserMessage(input.sessionId);
     if (!existing) throw new Error("Nothing to retry.");
     truncateAfter(input.sessionId, existing.seq);
@@ -612,6 +641,57 @@ export async function runTurn(input: {
         });
         input.emit({ type: "note", message: note });
         input.emit({ type: "done", iterations: pass, aborted: true });
+        return;
+      }
+      if (call.name === "ask_user" && current.chatMode === "plan") {
+        const parsed = parseAskUser(call.arguments);
+        input.emit({ type: "tool_call", call });
+        if (!parsed.ok) {
+          const payload = JSON.stringify({ ok: false, error: parsed.error }, null, 2);
+          insertMessage({
+            sessionId: input.sessionId,
+            role: "tool",
+            content: payload,
+            toolCallId: call.id,
+            toolName: call.name,
+          });
+          input.emit({
+            type: "tool_result",
+            toolCallId: call.id,
+            name: call.name,
+            content: payload,
+            ok: false,
+          });
+          continue;
+        }
+        for (const skipped of toolCalls.slice(index + 1)) {
+          const payload = JSON.stringify(
+            { ok: false, error: "Skipped because a clarifying question is waiting." },
+            null,
+            2,
+          );
+          insertMessage({
+            sessionId: input.sessionId,
+            role: "tool",
+            content: payload,
+            toolCallId: skipped.id,
+            toolName: skipped.name,
+          });
+          input.emit({
+            type: "tool_result",
+            toolCallId: skipped.id,
+            name: skipped.name,
+            content: payload,
+            ok: false,
+          });
+        }
+        input.emit({
+          type: "question",
+          toolCallId: call.id,
+          prompt: parsed.prompt,
+          options: parsed.options,
+        });
+        input.emit({ type: "done", iterations: pass, awaiting: "question" });
         return;
       }
       input.emit({ type: "tool_call", call });

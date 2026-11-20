@@ -5,6 +5,7 @@ import { readEntries } from "@/lib/memory";
 import { assembleSystemPrompt } from "@/lib/prompt";
 import { getSettings } from "@/lib/settings";
 import { discoverSkills, skillsIndexHash } from "@/lib/skills";
+import { parseAskUser, readAskAnswer } from "@/lib/ask-user";
 import { isChatMode } from "@/lib/chat-mode";
 import type { Attachment, ChatMode, SessionRecord, SessionSummary, StoredMessage, ToolCallRecord } from "@/lib/types";
 
@@ -368,8 +369,22 @@ export function sessionMarkdown(session: SessionRecord, messages: StoredMessage[
       lines.push("## Meridian", "");
       if (message.content.trim()) lines.push(message.content, "");
       for (const call of message.toolCalls ?? []) {
+        const question = call.name === "ask_user" ? parseAskUser(call.arguments) : null;
+        if (question && question.ok) {
+          lines.push(question.prompt, "");
+          for (const option of question.options) lines.push(`- ${option.label}`);
+          lines.push("");
+          continue;
+        }
         lines.push(`Tool \`${call.name}\``, "", "```json", call.arguments || "{}", "```", "");
       }
+    } else if (message.role === "tool" && message.toolName === "ask_user") {
+      const answer = readAskAnswer(message.content);
+      if (answer) {
+        lines.push("### Your answer", "", answer.answer, "");
+        continue;
+      }
+      lines.push(`### Result: ${message.toolName || "tool"}`, "", "```json", message.content, "```", "");
     } else if (message.role === "tool") {
       lines.push(`### Result: ${message.toolName || "tool"}`, "", "```json", message.content, "```", "");
     } else if (message.role === "note") {
