@@ -50,6 +50,7 @@ export function Composer({
   running,
   status,
   disabledReason,
+  awaitingQuestion = false,
   chatMode,
   skills,
   tools,
@@ -67,6 +68,7 @@ export function Composer({
   running: boolean;
   status: string | null;
   disabledReason: string | null;
+  awaitingQuestion?: boolean;
   chatMode: ChatMode;
   skills: ComposerSkill[];
   tools: ComposerTool[];
@@ -320,7 +322,9 @@ export function Composer({
             placeholder={
               running
                 ? "Steer this turn. Enter sends the correction. Stop ends it."
-                : "Message Meridian. Type / for modes, skills, and tools."
+                : awaitingQuestion
+                  ? "Or type your own answer."
+                  : "Message Meridian. Type / for modes, skills, and tools."
             }
             className="min-h-16 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent"
           />

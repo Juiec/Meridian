@@ -282,7 +282,31 @@ export function Sidebar({
           </Button>
         </div>
       </div>
-      <div className="space-y-2 px-3 pb-3">
+      <nav aria-label="Studios" className="space-y-0.5 border-b border-sidebar-border px-3 pb-3">
+        <Link
+          href="/images"
+          onClick={onClose}
+          className={cn(
+            "flex items-center gap-2 rounded-lg px-2 py-2 text-sm",
+            pathname === "/images" ? "bg-sidebar-accent text-sidebar-accent-foreground" : "hover:bg-sidebar-accent/60",
+          )}
+        >
+          <ImageIcon className="size-4 text-copper" />
+          Image Studio
+        </Link>
+        <Link
+          href="/travel"
+          onClick={onClose}
+          className={cn(
+            "flex items-center gap-2 rounded-lg px-2 py-2 text-sm",
+            pathname === "/travel" ? "bg-sidebar-accent text-sidebar-accent-foreground" : "hover:bg-sidebar-accent/60",
+          )}
+        >
+          <Compass className="size-4 text-copper" />
+          Travel Planner
+        </Link>
+      </nav>
+      <div className="space-y-2 px-3 pt-3 pb-3">
         <div className="flex gap-3 px-1" role="tablist" aria-label="Sidebar">
           <button
             type="button"
@@ -570,29 +594,6 @@ export function Sidebar({
           <Upload className="size-4" />
           Import JSON
         </button>
-        <p className="px-2 pt-2 text-[11px] tracking-[0.14em] text-muted-foreground uppercase">Tools</p>
-        <Link
-          href="/images"
-          onClick={onClose}
-          className={cn(
-            "flex items-center gap-2 rounded-lg px-2 py-2 text-sm",
-            pathname === "/images" ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60",
-          )}
-        >
-          <ImageIcon className="size-4" />
-          Image Studio
-        </Link>
-        <Link
-          href="/travel"
-          onClick={onClose}
-          className={cn(
-            "flex items-center gap-2 rounded-lg px-2 py-2 text-sm",
-            pathname === "/travel" ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60",
-          )}
-        >
-          <Compass className="size-4" />
-          Travel Planner
-        </Link>
         <Link
           href="/settings"
           onClick={onClose}

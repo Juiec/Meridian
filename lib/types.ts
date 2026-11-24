@@ -133,5 +133,11 @@ export type AgentEvent =
   | { type: "partial"; message: StoredMessage }
   | { type: "subagent"; title: string; detail: string }
   | { type: "compaction"; summary: string; mode: "model" | "extractive" }
+  | {
+      type: "question";
+      toolCallId: string;
+      prompt: string;
+      options: { label: string; value: string }[];
+    }
   | { type: "error"; message: string }
-  | { type: "done"; iterations: number; aborted?: boolean };
+  | { type: "done"; iterations: number; aborted?: boolean; awaiting?: "question" };

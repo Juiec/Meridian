@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronRight } from "lucide-react";
 
 import { MarkdownText } from "@/components/markdown-text";
+import { isQuestionPart, QuestionCard } from "@/components/question-card";
 import { Button } from "@/components/ui/button";
 import { CONTEXT_CLEANED_PREFIX } from "@/lib/context-usage";
 import { groupMessages, type ToolPart, type TranscriptItem } from "@/lib/group-messages";
@@ -42,6 +43,7 @@ export function Transcript({
   onRetry,
   onConfirmImage,
   empty,
+  pendingToolCallId,
 }: {
   messages: StoredMessage[];
   live: { parts: LivePart[]; status: string } | null;
@@ -52,6 +54,7 @@ export function Transcript({
   onRetry: () => void;
   onConfirmImage?: (toolCallId: string) => Promise<void>;
   empty: React.ReactNode;
+  pendingToolCallId?: string | null;
 }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
@@ -60,6 +63,10 @@ export function Transcript({
   const shown = folded === null ? messages : messages.filter((message) => message.seq > folded);
   const items = groupMessages(shown);
   const earlierItems = groupMessages(earlier);
+  const liveParts = live ? visibleLiveParts(live.parts) : [];
+  const liveIsOnlyQuestion = Boolean(
+    live && liveParts.length === 0 && live.parts.some((part) => part.kind === "tool" && isQuestionPart(part) && !part.result),
+  );
 
   useEffect(() => {
     const el = scrollerRef.current;
@@ -79,7 +86,12 @@ export function Transcript({
     >
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6 md:px-6">
         {compactedSummary ? (
-          <CompactionNote summary={compactedSummary} earlier={earlierItems} onConfirmImage={onConfirmImage} />
+          <CompactionNote
+            summary={compactedSummary}
+            earlier={earlierItems}
+            onConfirmImage={onConfirmImage}
+            pendingToolCallId={pendingToolCallId}
+          />
         ) : null}
         {loading && items.length === 0 ? (
           <p className="text-sm text-muted-foreground">Opening the session…</p>
@@ -98,20 +110,29 @@ export function Transcript({
         ) : null}
         {!loading && !error && items.length === 0 && !live ? empty : null}
         {items.map((item) => (
-          <TranscriptEntry key={item.id} item={item} onConfirmImage={onConfirmImage} />
+          <TranscriptEntry
+            key={item.id}
+            item={item}
+            onConfirmImage={onConfirmImage}
+            pendingToolCallId={pendingToolCallId}
+          />
         ))}
-        {live ? (
+        {live && !liveIsOnlyQuestion ? (
           <article className="max-w-[46rem] space-y-3 text-[15px]" aria-live="polite">
-            {live.parts.some((part) => part.kind === "reasoning") ? null : live.parts.length === 0 ? (
+            {live.parts.some((part) => part.kind === "reasoning") ? null : liveParts.length === 0 ? (
               <Thinking text="" streaming detail={live.status} />
             ) : null}
-            {live.parts.map((part, index) => {
+            {liveParts.map((part, index) => {
               if (part.kind === "reasoning") {
                 return <Thinking key={`live-r-${index}`} text={part.text} streaming detail={live.status} />;
               }
               if (part.kind === "text") return <MarkdownText key={`live-t-${index}`} text={part.text} />;
               return (
-                <ToolCard key={part.id || `live-tool-${index}`} part={part} onConfirmImage={onConfirmImage} />
+                <ToolOrQuestion
+                  key={part.id || `live-tool-${index}`}
+                  part={part}
+                  onConfirmImage={onConfirmImage}
+                />
               );
             })}
           </article>
@@ -134,10 +155,12 @@ function CompactionNote({
   summary,
   earlier,
   onConfirmImage,
+  pendingToolCallId,
 }: {
   summary: string;
   earlier: TranscriptItem[];
   onConfirmImage?: (toolCallId: string) => Promise<void>;
+  pendingToolCallId?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const cleaned = summary.startsWith(CONTEXT_CLEANED_PREFIX);
@@ -162,7 +185,14 @@ function CompactionNote({
       {open ? (
         <div className="mt-3 space-y-4">
           {earlier.length > 0 ? (
-            earlier.map((item) => <TranscriptEntry key={item.id} item={item} onConfirmImage={onConfirmImage} />)
+            earlier.map((item) => (
+              <TranscriptEntry
+                key={item.id}
+                item={item}
+                onConfirmImage={onConfirmImage}
+                pendingToolCallId={pendingToolCallId}
+              />
+            ))
           ) : (
             <p className="whitespace-pre-wrap text-muted-foreground">{summary}</p>
           )}
@@ -175,9 +205,11 @@ function CompactionNote({
 function TranscriptEntry({
   item,
   onConfirmImage,
+  pendingToolCallId,
 }: {
   item: TranscriptItem;
   onConfirmImage?: (toolCallId: string) => Promise<void>;
+  pendingToolCallId?: string | null;
 }) {
   if (item.kind === "user") {
     return (
@@ -216,14 +248,20 @@ function TranscriptEntry({
   if (item.kind === "note") {
     return <p className="text-center text-xs tracking-wide text-muted-foreground">{item.content.split("\n")[0]}</p>;
   }
+  const parts = item.parts.filter((part) => !isOpenQuestion(part, pendingToolCallId));
+  if (!item.reasoning && parts.length === 0) return null;
   return (
     <article className="max-w-[46rem] space-y-3 text-[15px]">
       {item.reasoning ? <Thinking text={item.reasoning} /> : null}
-      {item.parts.map((part, index) =>
+      {parts.map((part, index) =>
         part.kind === "text" ? (
           <MarkdownText key={`${item.id}-text-${index}`} text={part.text} />
         ) : (
-          <ToolCard key={part.id || `${item.id}-tool-${index}`} part={part} onConfirmImage={onConfirmImage} />
+          <ToolOrQuestion
+            key={part.id || `${item.id}-tool-${index}`}
+            part={part}
+            onConfirmImage={onConfirmImage}
+          />
         ),
       )}
     </article>
@@ -311,6 +349,28 @@ function Thinking({
       ) : null}
     </div>
   );
+}
+
+function isOpenQuestion(
+  part: { kind: string; id?: string; result?: string },
+  pendingToolCallId?: string | null,
+): boolean {
+  return part.kind === "tool" && Boolean(pendingToolCallId) && part.id === pendingToolCallId && !part.result;
+}
+
+function visibleLiveParts(parts: LivePart[]): LivePart[] {
+  return parts.filter((part) => !(part.kind === "tool" && isQuestionPart(part) && !part.result));
+}
+
+function ToolOrQuestion({
+  part,
+  onConfirmImage,
+}: {
+  part: ToolPart;
+  onConfirmImage?: (toolCallId: string) => Promise<void>;
+}) {
+  if (isQuestionPart(part)) return <QuestionCard part={part} />;
+  return <ToolCard part={part} onConfirmImage={onConfirmImage} />;
 }
 
 function ToolCard({

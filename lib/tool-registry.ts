@@ -74,7 +74,8 @@ function schemaOrEmpty(schema: Record<string, unknown> | undefined): Record<stri
 }
 
 export function mergeToolRegistry(input: { mcp: McpRegistryInput[]; custom: CustomRegistryInput[] }): ToolBundle {
-  const taken = new Set(BUILTIN_TOOL_NAMES);
+  const taken = new Set<string>(BUILTIN_TOOL_NAMES);
+  taken.add("ask_user");
   const routes: Record<string, ToolRoute> = {};
   const extras: ToolDefinition[] = [];
 

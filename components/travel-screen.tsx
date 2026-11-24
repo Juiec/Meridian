@@ -1,13 +1,12 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { readJson } from "@/components/client-api";
 import { ChatScreen } from "@/components/chat-screen";
-import { useOpenSidebar } from "@/components/shell";
-import { SidebarToggle } from "@/components/sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { groupPlaces } from "@/lib/travel-math";
@@ -74,7 +73,6 @@ type TravelPayload = {
 };
 
 export function TravelScreen() {
-  const openSidebar = useOpenSidebar();
   const tripQuery = useSearchParams().get("trip");
   const [payload, setPayload] = useState<TravelPayload | null>(null);
   const [plannerSessionId, setPlannerSessionId] = useState<string | null>(null);
@@ -234,13 +232,15 @@ export function TravelScreen() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex items-center gap-2 border-b border-border px-3 py-2 md:px-4">
-        <SidebarToggle onOpen={openSidebar} />
+      <header className="flex items-center gap-3 border-b border-border px-3 py-2 md:px-4">
+        <Link href="/" className="shrink-0 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+          Chats
+        </Link>
         <div ref={setHeaderHost} className="flex min-w-0 flex-1 flex-wrap items-center gap-2" />
       </header>
-      <main className="min-h-0 flex-1 overflow-y-auto lg:overflow-hidden">
-        <div className="grid min-h-full grid-cols-1 lg:h-full lg:grid-cols-[minmax(20rem,0.92fr)_minmax(0,1.08fr)]">
-          <section aria-label="Trip conversation" className="flex min-h-[34rem] min-w-0 flex-col border-b border-border lg:min-h-0 lg:border-b-0 lg:border-r">
+      <main className="@container/travel min-h-0 flex-1 overflow-y-auto @min-[860px]/travel:overflow-hidden">
+        <div className="grid min-h-full grid-cols-1 @min-[860px]/travel:h-full @min-[860px]/travel:grid-cols-[minmax(18rem,0.92fr)_minmax(0,1.08fr)]">
+          <section aria-label="Trip conversation" className="flex min-h-[34rem] min-w-0 flex-col border-b border-border @min-[860px]/travel:min-h-0 @min-[860px]/travel:border-b-0 @min-[860px]/travel:border-r">
             {plannerSessionId ? (
               <ChatScreen embedded embeddedSessionId={plannerSessionId} headerPortal={headerHost} />
             ) : (

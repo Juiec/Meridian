@@ -262,7 +262,8 @@ export async function modelContextLimit(input: {
 }): Promise<number | null> {
   const model = input.model.trim();
   if (!input.baseUrl.trim() || !model) return null;
-  const headers = input.apiKey ? { Authorization: `Bearer ${input.apiKey}` } : {};
+  const headers: Record<string, string> = {};
+  if (input.apiKey) headers.Authorization = `Bearer ${input.apiKey}`;
   let root: URL;
   try {
     root = new URL(input.baseUrl);

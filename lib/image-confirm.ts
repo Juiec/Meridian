@@ -63,8 +63,8 @@ export async function confirmImageGeneration(sessionId: string, toolCallId: stri
         model: image.model,
         createdAt: image.createdAt,
       })),
-      endpointId: result.endpointId,
-      model: result.model,
+      endpointId,
+      model,
     });
     updateToolMessage(sessionId, toolCallId, content);
     return content;

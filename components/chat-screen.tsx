@@ -1,6 +1,7 @@
 "use client";
 
 import { Download, PanelRight } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 
@@ -8,11 +9,14 @@ import { useAppState } from "@/components/app-state";
 import { readJson } from "@/components/client-api";
 import { Composer, type ComposerAttachment, type ComposerTool } from "@/components/composer";
 import { Inspector } from "@/components/inspector";
-import { useOpenSidebar } from "@/components/shell";
+import { QuestionCard } from "@/components/question-card";
+import { useOpenSidebar } from "@/components/shell-context";
 import { SidebarToggle } from "@/components/sidebar";
 import { Transcript, type LivePart } from "@/components/transcript";
+import type { ToolPart } from "@/lib/group-messages";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { askAnswerPayload, findPendingQuestion } from "@/lib/ask-user";
 import { CONTEXT_CLEANED_PREFIX, type ContextUsage } from "@/lib/context-usage";
 import { insertSkillToken } from "@/lib/slash-menu";
 import { readSse } from "@/lib/sse";
@@ -62,10 +66,13 @@ export function ChatScreen({
   embedded = false,
   embeddedSessionId,
   headerPortal = null,
+  companion = false,
 }: {
   embedded?: boolean;
   embeddedSessionId?: string | null;
   headerPortal?: HTMLElement | null;
+  /** Chat column kept beside Image Studio or Travel Planner. */
+  companion?: boolean;
 } = {}) {
   const openSidebar = useOpenSidebar();
   const {
@@ -96,6 +103,7 @@ export function ChatScreen({
   const [streamError, setStreamError] = useState<string | null>(null);
   const [live, setLive] = useState<{ parts: LivePart[]; status: string } | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [streamedQuestion, setStreamedQuestion] = useState<ToolPart | null>(null);
   const deskCollapsed = useSyncExternalStore(subscribeDesk, getDeskCollapsed, () => false);
   const [toolCatalog, setToolCatalog] = useState<ComposerTool[]>([]);
   const [modelDraft, setModelDraft] = useState("");
@@ -105,6 +113,7 @@ export function ChatScreen({
   const [tripDayState, setTripDayState] = useState<{ id: string; days: number[]; focus: number | null } | null>(null);
   const [cleaning, setCleaning] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const sendingRef = useRef(false);
   const runFor = useRef<string | null>(null);
   const roundRef = useRef<{ n: number; max: number } | null>(null);
   const localId = useRef(0);
@@ -157,7 +166,7 @@ export function ChatScreen({
     }
   }, []);
 
-  const load = useCallback(async (id: string) => {
+  const load = useCallback(async (id: string): Promise<StoredMessage[] | null> => {
     setThreadError(null);
     try {
       const data = await readJson<DetailResponse>(await fetch(`/api/sessions/${id}`));
@@ -166,8 +175,10 @@ export function ChatScreen({
       setModelDraft(data.session.model);
       setEndpointDraft(data.session.endpointId);
       void refreshContext(id);
+      return data.messages;
     } catch (err) {
       setThreadError(err instanceof Error ? err.message : "Could not open the session.");
+      return null;
     }
   }, [refreshContext]);
 
@@ -185,6 +196,7 @@ export function ChatScreen({
         setModelDraft(data.session.model);
         void refreshContext(activeSessionId);
         setEndpointDraft(data.session.endpointId);
+        setStatus(findPendingQuestion(data.messages) ? "Waiting for your answer" : null);
       } catch (err) {
         if (ac.signal.aborted) return;
         setThreadError(err instanceof Error ? err.message : "Could not open the session.");
@@ -250,11 +262,28 @@ export function ChatScreen({
       setStatus("Steering");
     } else if (event.type === "user") {
       setMessages((current) => {
-        const index = current.findIndex((message) => message.id.startsWith("local-"));
+        const index = current.findIndex((message) => message.role === "user" && message.id.startsWith("local-"));
         if (index === -1) return [...current, event.message];
         const next = [...current];
         next[index] = event.message;
         return next;
+      });
+    } else if (event.type === "question") {
+      setStatus("Waiting for your answer");
+      setStreamedQuestion({
+        kind: "tool",
+        id: event.toolCallId,
+        name: "ask_user",
+        arguments: JSON.stringify({ prompt: event.prompt, options: event.options }),
+        awaitingUser: true,
+      });
+      setLive((current) => {
+        const parts = (current?.parts ?? []).map((part) =>
+          part.kind === "tool" && part.id === event.toolCallId
+            ? { ...part, pending: false, awaitingUser: true }
+            : part,
+        );
+        return { parts, status: "Waiting for your answer" };
       });
     } else if (event.type === "note") {
       setMessages((current) => [...current, event.message]);
@@ -311,10 +340,11 @@ export function ChatScreen({
     }
   }
 
-  async function runChat(sessionId: string, body: Record<string, unknown>, optimistic?: StoredMessage) {
+  async function runChat(sessionId: string, body: Record<string, unknown>, optimistic?: StoredMessage[]) {
+    let waiting = false;
     const abort = new AbortController();
     abortRef.current = abort;
-    if (optimistic) setMessages((current) => [...current, optimistic]);
+    if (optimistic && optimistic.length > 0) setMessages((current) => [...current, ...optimistic]);
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -328,10 +358,13 @@ export function ChatScreen({
       }
       await readSse(response, (name, data) => {
         const event = data as AgentEvent;
-        if (event && typeof event === "object" && "type" in event) applyEvent(event, sessionId);
-        else if (name === "error") setStreamError("The stream returned an unreadable event.");
+        if (event && typeof event === "object" && "type" in event) {
+          if (event.type === "done" && event.awaiting === "question") waiting = true;
+          applyEvent(event, sessionId);
+        } else if (name === "error") setStreamError("The stream returned an unreadable event.");
       });
-      await load(sessionId);
+      const loaded = await load(sessionId);
+      if (loaded) waiting = findPendingQuestion(loaded) !== null;
       await refreshSessions();
       await refreshMemory();
     } catch (err) {
@@ -350,7 +383,8 @@ export function ChatScreen({
       setStreamingId(null);
       setLive(null);
       setRunning(false);
-      if (!stopped) setStatus(null);
+      if (!waiting) setStreamedQuestion(null);
+      if (!stopped) setStatus(waiting ? "Waiting for your answer" : null);
     }
   }
 
@@ -392,9 +426,11 @@ export function ChatScreen({
     }
   }
 
-  async function send() {
-    const content = draft.trim();
-    if ((!content && attachments.length === 0) || running) return;
+  async function submit(text: string, files: ComposerAttachment[]) {
+    const content = text.trim();
+    if (sendingRef.current || running) return;
+    if (!content && files.length === 0) return;
+    sendingRef.current = true;
     setStreamError(null);
     setRunning(true);
     setStatus("Sending");
@@ -403,35 +439,71 @@ export function ChatScreen({
     try {
       sessionId = await begin(sessionId);
       localId.current += 1;
-      const optimistic: StoredMessage = {
-        id: `local-${localId.current}`,
-        sessionId,
-        seq: -1,
-        role: "user",
-        content: content || "Look at the attached files.",
-        toolCalls: null,
-        toolCallId: null,
-        toolName: null,
-        reasoning: null,
-        attachments: attachments.map((file, index) => ({
-          id: `local-file-${index}`,
-          name: file.name,
-          mediaType: file.mediaType,
-          kind: file.dataUrl ? "image" : "text",
-          text: file.text,
-          dataUrl: file.dataUrl,
-        })),
-        createdAt: 0,
-      };
-      const files = attachments;
-      setDraft("");
-      setAttachments([]);
+      const pending = findPendingQuestion(messages);
+      const answerText = content || "Look at the attached files.";
+      const answered = pending ? askAnswerPayload(pending.options, answerText) : null;
+      const optimistic: StoredMessage[] = [];
+      if (pending && answered) {
+        optimistic.push({
+          id: `local-tool-${localId.current}`,
+          sessionId,
+          seq: -1,
+          role: "tool",
+          content: JSON.stringify(answered, null, 2),
+          toolCalls: null,
+          toolCallId: pending.call.id,
+          toolName: "ask_user",
+          reasoning: null,
+          attachments: [],
+          createdAt: Date.now(),
+        });
+      }
+      if (!pending || files.length > 0) {
+        optimistic.push({
+          id: `local-${localId.current}`,
+          sessionId,
+          seq: -1,
+          role: "user",
+          content: answered?.answer ?? answerText,
+          toolCalls: null,
+          toolCallId: null,
+          toolName: null,
+          reasoning: null,
+          attachments: files.map((file, index) => ({
+            id: `local-file-${index}`,
+            name: file.name,
+            mediaType: file.mediaType,
+            kind: file.dataUrl ? "image" : "text",
+            text: file.text,
+            dataUrl: file.dataUrl,
+          })),
+          createdAt: Date.now(),
+        });
+      }
       await runChat(sessionId, { content, attachments: files }, optimistic);
     } catch (err) {
       setRunning(false);
       setLive(null);
       setStreamError(err instanceof Error ? err.message : "The turn failed.");
+    } finally {
+      sendingRef.current = false;
     }
+  }
+
+  function send() {
+    const content = draft.trim();
+    const files = attachments;
+    if ((!content && files.length === 0) || running) return;
+    setDraft("");
+    setAttachments([]);
+    void submit(content, files);
+  }
+
+  function chooseDirection(label: string) {
+    if (running || sendingRef.current) return;
+    setDraft("");
+    document.getElementById("composer")?.focus();
+    void submit(label, []);
   }
 
   async function steer() {
@@ -544,6 +616,18 @@ export function ChatScreen({
         : threadDetail?.title;
   const headerTitle = headerSource && headerSource !== "New session" ? headerSource : "Meridian";
   const threadMessages = ownsThread ? messages : [];
+  const pendingQuestion = ownsThread ? findPendingQuestion(threadMessages) : null;
+  const pendingId = pendingQuestion?.call.id ?? null;
+  if (pendingId && streamedQuestion) setStreamedQuestion(null);
+  const pinnedQuestion: ToolPart | null = pendingQuestion
+    ? {
+        kind: "tool",
+        id: pendingQuestion.call.id,
+        name: "ask_user",
+        arguments: pendingQuestion.call.arguments,
+        awaitingUser: true,
+      }
+    : streamedQuestion;
   if (threadDetail && modelFor !== threadDetail.id) {
     setModelFor(threadDetail.id);
     setModelDraft(threadDetail.model);
@@ -609,114 +693,109 @@ export function ChatScreen({
       </Button>
     </div>
   ) : null;
+  const endpointControls = companion ? null : (
+    <>
+      {(settings?.endpoints.length ?? 0) > 1 ? (
+        <label className="flex items-center gap-1.5">
+          <span className="hidden text-[11px] tracking-wide text-muted-foreground uppercase sm:inline">Host</span>
+          <select
+            aria-label="Endpoint for this session"
+            className="h-8 max-w-36 rounded-lg border border-input bg-background px-2 text-xs md:max-w-48"
+            value={selectedEndpointId}
+            disabled={!threadDetail || running}
+            onChange={(event) => {
+              const nextEndpointId = event.target.value;
+              const nextEndpoint = settings?.endpoints.find((endpoint) => endpoint.id === nextEndpointId);
+              const nextModel =
+                nextEndpoint?.models.includes(modelDraft)
+                  ? modelDraft
+                  : nextEndpoint?.model || nextEndpoint?.models[0] || "";
+              setEndpointDraft(nextEndpointId);
+              setModelDraft(nextModel);
+              void saveModel(nextModel, nextEndpointId);
+            }}
+          >
+            {settings?.endpoints.map((endpoint) => (
+              <option key={endpoint.id} value={endpoint.id}>{endpoint.name}</option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+      <label className="flex min-w-0 items-center gap-2">
+        <span className="hidden text-[11px] tracking-wide text-muted-foreground uppercase sm:inline">Model</span>
+        {modelChoices.length > 0 ? (
+          <select
+            aria-label="Model for this session"
+            className="h-8 w-44 rounded-lg border border-input bg-background px-2 text-xs md:w-80"
+            value={modelDraft || threadDetail?.model || selectedEndpoint?.model || ""}
+            disabled={!threadDetail || running}
+            onChange={(event) => {
+              setModelDraft(event.target.value);
+              void saveModel(event.target.value);
+            }}
+          >
+            {!modelDraft || modelChoices.includes(modelDraft) ? null : <option value={modelDraft}>{modelDraft}</option>}
+            {modelChoices.map((id) => (
+              <option key={id} value={id}>{id}</option>
+            ))}
+          </select>
+        ) : (
+          <Input
+            value={modelDraft}
+            onChange={(event) => setModelDraft(event.target.value)}
+            onBlur={() => void saveModel()}
+            placeholder={selectedEndpoint?.model || "model id"}
+            aria-label="Model id for this session"
+            className="w-32 md:w-56"
+            disabled={!threadDetail || running}
+          />
+        )}
+      </label>
+    </>
+  );
 
   return (
     <div className="flex min-h-0 flex-1">
       <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {embedded ? (
-          headerPortal ? createPortal(
-            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-              <div className="min-w-0 flex-1">
-            <p className="truncate font-display text-xl leading-none">
-              {embedded ? "Trip conversation" : headerTitle}
-            </p>
-            <div className="mt-1 flex min-w-0 items-center gap-2">
-              <p className="truncate text-xs text-muted-foreground">
-                {embedded
-                  ? "Separate from your chat sessions"
-                  : threadDetail
-                    ? "Prompt snapshot frozen for this session"
-                    : "Sessions, skills, and a short memory"}
-              </p>
-              <ContextMeter usage={threadDetail ? contextUsage : null} />
+{embedded && headerPortal ? createPortal(
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-display text-xl leading-none">Trip conversation</p>
+              <div className="mt-1 flex min-w-0 items-center gap-2">
+                <p className="truncate text-xs text-muted-foreground">Separate from your chat sessions</p>
+                <ContextMeter usage={threadDetail ? contextUsage : null} />
+              </div>
             </div>
-          </div>
-          {cleanControls}
-          {threadDetail && !embedded ? (
-            <div className="flex items-center gap-1">
-              <Button type="button" variant="ghost" size="icon-sm" aria-label="Export markdown" onClick={() => void download("md", headerTitle)}>
-                <Download />
-              </Button>
-              <Button type="button" variant="ghost" size="sm" className="hidden sm:inline-flex" onClick={() => void download("json", headerTitle)}>
-                JSON
-              </Button>
-            </div>
-          ) : null}
-          {(settings?.endpoints.length ?? 0) > 1 ? (
-                <label className="flex items-center gap-1.5">
-                  <span className="hidden text-[11px] tracking-wide text-muted-foreground uppercase sm:inline">Host</span>
-                  <select
-                    aria-label="Endpoint for this session"
-                    className="h-8 max-w-36 rounded-lg border border-input bg-background px-2 text-xs md:max-w-48"
-                    value={selectedEndpointId}
-                    disabled={!threadDetail || running}
-                    onChange={(event) => {
-                      const nextEndpointId = event.target.value;
-                      const nextEndpoint = settings?.endpoints.find((endpoint) => endpoint.id === nextEndpointId);
-                      const nextModel =
-                        nextEndpoint?.models.includes(modelDraft)
-                          ? modelDraft
-                          : nextEndpoint?.model || nextEndpoint?.models[0] || "";
-                      setEndpointDraft(nextEndpointId);
-                      setModelDraft(nextModel);
-                      void saveModel(nextModel, nextEndpointId);
-                    }}
-                  >
-                    {settings?.endpoints.map((endpoint) => (
-                      <option key={endpoint.id} value={endpoint.id}>{endpoint.name}</option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-              <label className="flex min-w-0 items-center gap-2">
-                <span className="hidden text-[11px] tracking-wide text-muted-foreground uppercase sm:inline">Model</span>
-                {modelChoices.length > 0 ? (
-                  <select
-                    aria-label="Model for this session"
-                    className="h-8 w-44 rounded-lg border border-input bg-background px-2 text-xs md:w-80"
-                    value={modelDraft || threadDetail?.model || selectedEndpoint?.model || ""}
-                    disabled={!threadDetail || running}
-                    onChange={(event) => {
-                      setModelDraft(event.target.value);
-                      void saveModel(event.target.value);
-                    }}
-                  >
-                    {!modelDraft || modelChoices.includes(modelDraft) ? null : <option value={modelDraft}>{modelDraft}</option>}
-                    {modelChoices.map((id) => (
-                      <option key={id} value={id}>
-                        {id}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <Input
-                    value={modelDraft}
-                    onChange={(event) => setModelDraft(event.target.value)}
-                    onBlur={() => void saveModel()}
-                    placeholder={selectedEndpoint?.model || "model id"}
-                    aria-label="Model id for this session"
-                    className="w-32 md:w-56"
-                    disabled={!threadDetail || running}
-                  />
-                )}
-              </label>
-            </div>,
-            headerPortal,
-          ) : null
+            {cleanControls}
+            {endpointControls}
+          </div>,
+          headerPortal,
         ) : (
           <header className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2 md:px-4">
-            <SidebarToggle onOpen={openSidebar} />
+            {embedded ? null : companion ? (
+              <Link href="/" className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+                All chats
+              </Link>
+            ) : (
+              <SidebarToggle onOpen={openSidebar} />
+            )}
             <div className="min-w-0 flex-1">
-              <p className="truncate font-display text-xl leading-none">{headerTitle}</p>
+              <p className="truncate font-display text-xl leading-none">
+                {embedded ? "Trip conversation" : headerTitle}
+              </p>
               <div className="mt-1 flex min-w-0 items-center gap-2">
                 <p className="truncate text-xs text-muted-foreground">
-                  {threadDetail ? "Prompt snapshot frozen for this session" : "Sessions, skills, and a short memory"}
+                  {embedded
+                    ? "Separate from your chat sessions"
+                    : threadDetail
+                      ? "Prompt snapshot frozen for this session"
+                      : "Sessions, skills, and a short memory"}
                 </p>
                 <ContextMeter usage={threadDetail ? contextUsage : null} />
               </div>
             </div>
             {cleanControls}
-            {threadDetail ? (
+            {threadDetail && !embedded && !companion ? (
               <div className="flex items-center gap-1">
                 <Button type="button" variant="ghost" size="icon-sm" aria-label="Export markdown" onClick={() => void download("md", headerTitle)}>
                   <Download />
@@ -726,72 +805,19 @@ export function ChatScreen({
                 </Button>
               </div>
             ) : null}
-            {(settings?.endpoints.length ?? 0) > 1 ? (
-              <label className="flex items-center gap-1.5">
-                <span className="hidden text-[11px] tracking-wide text-muted-foreground uppercase sm:inline">Host</span>
-                <select
-                  aria-label="Endpoint for this session"
-                  className="h-8 max-w-36 rounded-lg border border-input bg-background px-2 text-xs md:max-w-48"
-                  value={selectedEndpointId}
-                  disabled={!threadDetail || running}
-                  onChange={(event) => {
-                    const nextEndpointId = event.target.value;
-                    const nextEndpoint = settings?.endpoints.find((endpoint) => endpoint.id === nextEndpointId);
-                    const nextModel =
-                      nextEndpoint?.models.includes(modelDraft)
-                        ? modelDraft
-                        : nextEndpoint?.model || nextEndpoint?.models[0] || "";
-                    setEndpointDraft(nextEndpointId);
-                    setModelDraft(nextModel);
-                    void saveModel(nextModel, nextEndpointId);
-                  }}
-                >
-                  {settings?.endpoints.map((endpoint) => (
-                    <option key={endpoint.id} value={endpoint.id}>{endpoint.name}</option>
-                  ))}
-                </select>
-              </label>
+            {endpointControls}
+            {!embedded && !companion ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Open skills and memory"
+                onClick={() => setInspectorOpen(true)}
+                className="xl:hidden"
+              >
+                <PanelRight />
+              </Button>
             ) : null}
-            <label className="flex min-w-0 items-center gap-2">
-              <span className="hidden text-[11px] tracking-wide text-muted-foreground uppercase sm:inline">Model</span>
-              {modelChoices.length > 0 ? (
-                <select
-                  aria-label="Model for this session"
-                  className="h-8 max-w-40 rounded-lg border border-input bg-background px-2 text-xs md:max-w-56"
-                  value={modelDraft || threadDetail?.model || selectedEndpoint?.model || ""}
-                  disabled={!threadDetail || running}
-                  onChange={(event) => {
-                    setModelDraft(event.target.value);
-                    void saveModel(event.target.value);
-                  }}
-                >
-                  {!modelDraft || modelChoices.includes(modelDraft) ? null : <option value={modelDraft}>{modelDraft}</option>}
-                  {modelChoices.map((id) => (
-                    <option key={id} value={id}>{id}</option>
-                  ))}
-                </select>
-              ) : (
-                <Input
-                  value={modelDraft}
-                  onChange={(event) => setModelDraft(event.target.value)}
-                  onBlur={() => void saveModel()}
-                  placeholder={selectedEndpoint?.model || "model id"}
-                  aria-label="Model id for this session"
-                  className="w-32 md:w-56"
-                  disabled={!threadDetail || running}
-                />
-              )}
-            </label>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Open skills and memory"
-              onClick={() => setInspectorOpen(true)}
-              className="xl:hidden"
-            >
-              <PanelRight />
-            </Button>
           </header>
         )}
         {offline ? (
@@ -800,6 +826,13 @@ export function ChatScreen({
             {health?.stale ? " The last model list is still available." : ""}
           </p>
         ) : null}
+        {pinnedQuestion ? (
+          <div className="border-b border-border bg-background px-4 py-3 md:px-6">
+            <div className="mx-auto w-full max-w-3xl">
+              <QuestionCard part={pinnedQuestion} onAnswer={!running ? chooseDirection : undefined} />
+            </div>
+          </div>
+        ) : null}
         <Transcript
           messages={threadMessages}
           live={ownsThread ? live : null}
@@ -807,6 +840,7 @@ export function ChatScreen({
           foldedThroughSeq={foldedThroughSeq}
           loading={Boolean(activeSessionId) && !ownsThread && !threadError}
           error={threadError}
+          pendingToolCallId={pendingId}
           onRetry={() => {
             if (activeSessionId) void load(activeSessionId);
           }}
@@ -858,12 +892,13 @@ export function ChatScreen({
           running={running}
           status={status}
           disabledReason={disabledReason}
+          awaitingQuestion={Boolean(pinnedQuestion)}
           chatMode={detail?.chatMode ?? "agent"}
           skills={skills}
           tools={toolCatalog}
         />
       </section>
-      {!embedded ? (
+      {!embedded && !companion ? (
         <Inspector
           open={inspectorOpen}
           collapsed={deskCollapsed}
@@ -876,7 +911,7 @@ export function ChatScreen({
           }}
         />
       ) : null}
-      {!embedded && inspectorOpen ? (
+      {!embedded && !companion && inspectorOpen ? (
         <button
           type="button"
           aria-label="Close skills and memory"
