@@ -126,7 +126,7 @@ The desk edits two more files. They are not injected mid-session until the promp
 | `agent/SOUL.md` | Stable identity | 6,000 characters |
 | `agent/AGENTS.md` | Context instructions for this app | 8,000 characters |
 
-A save that would pass the limit returns an error and leaves the file unchanged. The root `AGENTS.md` is Next.js guidance for coding agents and is not this file.
+A save that would pass the limit returns an error and leaves the file unchanged.
 
 ## Tools
 
@@ -215,7 +215,7 @@ Hermes and Pi ideas, and where they live here:
 | MCP client and custom tools | `lib/mcp-runtime.ts` connects stdio, streamable HTTP, and SSE. `lib/custom-tools.ts` calls webhooks. `lib/tool-registry.ts` merges them with built-ins without letting either replace `memory`, `skill_view`, `list_skills`, `fetch_url`, `current_time`, or `travel_*`. |
 | Travel lookups and the trip map | `lib/travel.ts` calls Open-Meteo, Nominatim, and OSRM. `lib/travel-math.ts` is the haversine and illustrative fare math. `lib/travel-store.ts` stores the plan and price URL. `components/travel-screen.tsx` and `components/trip-map.tsx` are the page and Leaflet map. |
 
-`agent/AGENTS.md` is the model’s project context. The `AGENTS.md` at the repo root is Next.js guidance for coding agents and is not injected into the prompt.
+`agent/AGENTS.md` is the model’s project context.
 
 Built-in tools: `memory`, `skill_view`, `list_skills`, `delegate`, `fetch_url`, `current_time`, `image_generate`, `travel_geocode`, `travel_weather`, `travel_places`, `travel_route`, `travel_prices`, and `travel_plan`. MCP and custom tools are added beside them at request time. `delegate` (`lib/subagent.ts`, `lib/context-summary.ts`) runs a child session whose prompt is the task plus a bounded summary. The parent tool result is that answer, not the child transcript. Child sessions use purpose `subagent` and stay out of the chat list. Deleting the parent chat deletes them.
 
