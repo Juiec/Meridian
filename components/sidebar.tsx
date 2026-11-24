@@ -1,8 +1,8 @@
 "use client";
 
-import { Archive, Compass, ImageIcon, Menu, Pencil, Plus, Settings, Star, Trash2, Upload, X } from "lucide-react";
+import { Archive, ChevronRight, Compass, Folder, FolderInput, ImageIcon, Menu, Pencil, Plus, Settings, Star, Trash2, Upload, X } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { useAppState } from "@/components/app-state";
@@ -31,6 +31,7 @@ export function Sidebar({
   onClose: () => void;
 }) {
   const pathname = usePathname();
+  const tripQuery = useSearchParams().get("trip");
   const router = useRouter();
   const {
     sessions,
@@ -57,6 +58,8 @@ export function Sidebar({
   const [pane, setPane] = useState<"chats" | "files">("chats");
   const [showArchived, setShowArchived] = useState(false);
   const [archivedSessions, setArchivedSessions] = useState<SessionSummary[]>([]);
+  const [travelSessions, setTravelSessions] = useState<SessionSummary[]>([]);
+  const [travelOpen, setTravelOpen] = useState(true);
   const importRef = useRef<HTMLInputElement>(null);
 
   async function startNew() {
@@ -74,10 +77,30 @@ export function Sidebar({
     }
   }
 
-  function selectSession(id: string) {
+  function selectSession(id: string, href: "/" | "/travel" = "/") {
     setActiveSessionId(id);
     onClose();
-    if (pathname !== "/") router.push("/");
+    const target = href === "/travel" ? `/travel?trip=${encodeURIComponent(id)}` : "/";
+    if (`${pathname}${href === "/travel" && tripQuery ? `?trip=${tripQuery}` : ""}` !== target) router.push(target);
+  }
+
+  async function startTrip() {
+    setBusy(true);
+    setActionError(null);
+    try {
+      const data = await readJson<{ session: SessionSummary }>(
+        await fetch("/api/travel/session", { method: "POST" }),
+      );
+      const listed = await readJson<{ sessions: SessionSummary[] }>(await fetch("/api/sessions?purpose=travel"));
+      setTravelSessions(listed.sessions);
+      setTravelOpen(true);
+      onClose();
+      router.push(`/travel?trip=${encodeURIComponent(data.session.id)}`);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Could not start a trip.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   function mentionFile(line: string) {
@@ -105,7 +128,7 @@ export function Sidebar({
       void (async () => {
         try {
           const data = await readJson<{ sessions: SessionSummary[] }>(
-            await fetch(`/api/sessions?q=${encodeURIComponent(term)}&archived=all`, { signal: ac.signal }),
+            await fetch(`/api/sessions?q=${encodeURIComponent(term)}&archived=all&purpose=all`, { signal: ac.signal }),
           );
           if (!ac.signal.aborted) setMatches(data.sessions);
         } catch (err) {
@@ -136,6 +159,43 @@ export function Sidebar({
     })();
     return () => ac.abort();
   }, [showArchived, sessions]);
+
+  useEffect(() => {
+    const ac = new AbortController();
+    void (async () => {
+      try {
+        const data = await readJson<{ sessions: SessionSummary[] }>(
+          await fetch("/api/sessions?purpose=travel", { signal: ac.signal }),
+        );
+        if (!ac.signal.aborted) setTravelSessions(data.sessions);
+      } catch {
+        if (!ac.signal.aborted) setTravelSessions([]);
+      }
+    })();
+    return () => ac.abort();
+  }, [sessions, pathname]);
+
+  async function moveToTravel(id: string) {
+    setActionError(null);
+    setBusy(true);
+    try {
+      await readJson(
+        await fetch(`/api/sessions/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ purpose: "travel" }),
+        }),
+      );
+      setTravelOpen(true);
+      await refreshSessions();
+      onClose();
+      router.push(`/travel?trip=${encodeURIComponent(id)}`);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Could not move that chat into Travel.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function patchSession(id: string, body: { pinned?: boolean; archived?: boolean }) {
     setActionError(null);
@@ -184,7 +244,8 @@ export function Sidebar({
     }
   }
 
-  const visible = query.trim() ? (matches ?? []) : sessions;
+  const visible = (query.trim() ? (matches ?? []) : sessions).filter((session) => session.purpose !== "travel");
+  const travelVisible = query.trim() ? (matches ?? []).filter((session) => session.purpose === "travel") : travelSessions;
   const statusLabel = healthChecking
     ? "Checking LM Studio"
     : health?.ok
@@ -287,7 +348,60 @@ export function Sidebar({
               Retry
             </Button>
           </div>
-        ) : query.trim() && matches === null ? (
+        ) : (
+          <>
+            <div className="mb-2">
+              <button
+                type="button"
+                className="flex w-full items-center gap-1.5 rounded-lg px-2 py-2 text-left text-sm hover:bg-sidebar-accent/60"
+                aria-expanded={travelOpen}
+                onClick={() => setTravelOpen((open) => !open)}
+              >
+                <ChevronRight className={cn("size-3.5", travelOpen && "rotate-90")} />
+                <Folder className="size-4" />
+                Travel
+              </button>
+              {travelOpen ? (
+                <>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-1.5 rounded-lg py-1.5 pr-2 pl-7 text-left text-sm text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
+                    onClick={() => void startTrip()}
+                    disabled={busy}
+                  >
+                    <Plus className="size-3.5" />
+                    New trip
+                  </button>
+                  {travelVisible.length === 0 ? (
+                    <p className="px-7 py-1 text-xs text-muted-foreground">No trips yet.</p>
+                  ) : (
+                  <ul className="space-y-0.5">
+                    {travelVisible.map((session) => {
+                      const opened = tripQuery || [...travelVisible].sort((a, b) => a.createdAt - b.createdAt)[0]?.id;
+                      const active = pathname === "/travel" && session.id === opened;
+                      return (
+                        <li key={session.id}>
+                          <button
+                            type="button"
+                            onClick={() => selectSession(session.id, "/travel")}
+                            aria-current={active ? "page" : undefined}
+                            className={cn(
+                              "block w-full truncate rounded-lg py-1.5 pr-2 pl-7 text-left text-sm",
+                              active ? "bg-sidebar-accent text-sidebar-accent-foreground" : "hover:bg-sidebar-accent/60",
+                            )}
+                          >
+                            {session.title}
+                            <span className="mt-0.5 block text-[11px] text-muted-foreground">{relativeStamp(session.updatedAt, now)}</span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  )}
+                </>
+              ) : null}
+            </div>
+            {query.trim() && matches === null ? (
           <p className="px-2 py-3 text-sm text-muted-foreground">Searching…</p>
         ) : visible.length === 0 ? (
           <p className="px-2 py-3 text-sm text-muted-foreground">
@@ -368,6 +482,16 @@ export function Sidebar({
                         variant="ghost"
                         size="icon-xs"
                         className="opacity-100 md:opacity-0 md:group-hover:opacity-100"
+                        aria-label={`Move ${session.title} to Travel`}
+                        onClick={() => void moveToTravel(session.id)}
+                      >
+                        <FolderInput />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        className="opacity-100 md:opacity-0 md:group-hover:opacity-100"
                         aria-label={session.archived ? `Unarchive ${session.title}` : `Archive ${session.title}`}
                         onClick={() =>
                           void patchSession(session.id, { archived: !session.archived }).catch((err) =>
@@ -393,6 +517,8 @@ export function Sidebar({
               );
             })}
           </ul>
+            )}
+          </>
         )}
         {actionError ? <p className="px-2 pt-2 text-xs text-destructive">{actionError}</p> : null}
         {pane === "chats" ? (

@@ -1,6 +1,6 @@
+import { ImageSettingsError, resolveImageTarget } from "@/lib/image-settings";
 import { detectImageMediaType, insertGeneratedImage, type GeneratedImage } from "@/lib/image-store";
-import { getSession } from "@/lib/sessions";
-import { endpointSettingsList, getSettings } from "@/lib/settings";
+import { endpointSettingsList, type ResolvedSettings } from "@/lib/settings";
 
 export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 export const MAX_IMAGES = 10;
@@ -58,21 +58,26 @@ export function validSize(size: string): boolean {
   );
 }
 
-function resolveEndpoint(input: ImageGenerationInput) {
+function resolveEndpoint(input: ImageGenerationInput): { endpoint: ResolvedSettings; defaultModel: string } {
   const endpoints = endpointSettingsList();
   const explicit = input.endpointId?.trim();
-  let endpoint = explicit ? endpoints.find((item) => item.endpointId === explicit) : undefined;
-  if (!endpoint && !explicit && input.sessionId) {
-    const session = getSession(input.sessionId);
-    if (session?.endpointId) endpoint = endpoints.find((item) => item.endpointId === session.endpointId);
+  if (explicit) {
+    const endpoint = endpoints.find((item) => item.endpointId === explicit);
+    if (!endpoint) throw new ImageRequestError("Choose a saved image endpoint in Image Studio.");
+    if (!endpoint.baseUrl) throw new ImageRequestError(`Add a base URL for ${endpoint.name} in Settings first.`);
+    return { endpoint, defaultModel: endpoint.model };
   }
-  if (!endpoint && !explicit) {
-    const active = getSettings().endpointId;
-    endpoint = endpoints.find((item) => item.endpointId === active) ?? endpoints[0];
+  let target;
+  try {
+    target = resolveImageTarget();
+  } catch (err) {
+    if (err instanceof ImageSettingsError) throw new ImageRequestError(err.message);
+    throw err;
   }
+  const endpoint = endpoints.find((item) => item.endpointId === target.endpointId);
   if (!endpoint) throw new ImageRequestError("Choose a saved image endpoint in Image Studio.");
   if (!endpoint.baseUrl) throw new ImageRequestError(`Add a base URL for ${endpoint.name} in Settings first.`);
-  return endpoint;
+  return { endpoint, defaultModel: target.model };
 }
 
 async function downloadImage(url: string, signal?: AbortSignal): Promise<{ bytes: Buffer; mediaType?: string } | null> {
@@ -105,8 +110,9 @@ export async function generateImages(
   input: ImageGenerationInput,
   signal?: AbortSignal,
 ): Promise<ImageGenerationResult> {
-  const endpoint = resolveEndpoint(input);
-  const model = (input.model?.trim() || endpoint.model || endpoint.models[0] || "").trim();
+  const resolved = resolveEndpoint(input);
+  const endpoint = resolved.endpoint;
+  const model = (input.model?.trim() || resolved.defaultModel || endpoint.model || endpoint.models[0] || "").trim();
   if (!model) throw new ImageRequestError("Choose an image model for this endpoint.");
   if (model.length > 200) throw new ImageRequestError("Model name is too long.");
   const prompt = input.prompt.trim();

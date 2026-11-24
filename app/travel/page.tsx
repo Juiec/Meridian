@@ -1,5 +1,11 @@
+import { Suspense } from "react";
+
 import { TravelScreen } from "@/components/travel-screen";
 
 export default function TravelPage() {
-  return <TravelScreen />;
+  return (
+    <Suspense fallback={null}>
+      <TravelScreen />
+    </Suspense>
+  );
 }

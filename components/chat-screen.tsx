@@ -2,6 +2,7 @@
 
 import { Download, PanelRight } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 
 import { useAppState } from "@/components/app-state";
 import { readJson } from "@/components/client-api";
@@ -12,6 +13,7 @@ import { SidebarToggle } from "@/components/sidebar";
 import { Transcript, type LivePart } from "@/components/transcript";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { CONTEXT_CLEANED_PREFIX, type ContextUsage } from "@/lib/context-usage";
 import { insertSkillToken } from "@/lib/slash-menu";
 import { readSse } from "@/lib/sse";
 import type { AgentEvent, SessionRecord, StoredMessage } from "@/lib/types";
@@ -59,9 +61,11 @@ if (typeof window !== "undefined") deskCollapsedValue = readStoredDesk();
 export function ChatScreen({
   embedded = false,
   embeddedSessionId,
+  headerPortal = null,
 }: {
   embedded?: boolean;
   embeddedSessionId?: string | null;
+  headerPortal?: HTMLElement | null;
 } = {}) {
   const openSidebar = useOpenSidebar();
   const {
@@ -97,8 +101,12 @@ export function ChatScreen({
   const [modelDraft, setModelDraft] = useState("");
   const [modelFor, setModelFor] = useState<string | null>(null);
   const [endpointDraft, setEndpointDraft] = useState("");
+  const [contextUsage, setContextUsage] = useState<ContextUsage | null>(null);
+  const [tripDayState, setTripDayState] = useState<{ id: string; days: number[]; focus: number | null } | null>(null);
+  const [cleaning, setCleaning] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const runFor = useRef<string | null>(null);
+  const roundRef = useRef<{ n: number; max: number } | null>(null);
   const localId = useRef(0);
 
   if (!embedded && composerSeed && composerSeed !== appliedSeed) {
@@ -138,6 +146,17 @@ export function ChatScreen({
     return () => ac.abort();
   }, []);
 
+  const contextTicket = useRef(0);
+  const refreshContext = useCallback(async (id: string) => {
+    const ticket = ++contextTicket.current;
+    try {
+      const data = await readJson<{ context: ContextUsage }>(await fetch(`/api/sessions/${id}/context`));
+      if (contextTicket.current === ticket) setContextUsage(data.context);
+    } catch {
+      if (contextTicket.current === ticket) setContextUsage(null);
+    }
+  }, []);
+
   const load = useCallback(async (id: string) => {
     setThreadError(null);
     try {
@@ -146,10 +165,11 @@ export function ChatScreen({
       setMessages(data.messages);
       setModelDraft(data.session.model);
       setEndpointDraft(data.session.endpointId);
+      void refreshContext(id);
     } catch (err) {
       setThreadError(err instanceof Error ? err.message : "Could not open the session.");
     }
-  }, []);
+  }, [refreshContext]);
 
   useEffect(() => {
     if (!activeSessionId || runFor.current === activeSessionId) return;
@@ -163,6 +183,7 @@ export function ChatScreen({
         setDetail(data.session);
         setMessages(data.messages);
         setModelDraft(data.session.model);
+        void refreshContext(activeSessionId);
         setEndpointDraft(data.session.endpointId);
       } catch (err) {
         if (ac.signal.aborted) return;
@@ -170,7 +191,36 @@ export function ChatScreen({
       }
     })();
     return () => ac.abort();
-  }, [activeSessionId]);
+  }, [activeSessionId, refreshContext]);
+
+  const travelPlanId = detail?.purpose === "travel" && detail.id === activeSessionId ? detail.id : null;
+  const tripDays = tripDayState?.id === travelPlanId ? tripDayState.days : [];
+  const focusDay = tripDayState?.id === travelPlanId ? tripDayState.focus : null;
+
+  useEffect(() => {
+    if (!travelPlanId) return;
+    const ac = new AbortController();
+    void (async () => {
+      try {
+        const data = await readJson<{ places: Array<{ day: number | null }> }>(
+          await fetch(`/api/travel?trip=${encodeURIComponent(travelPlanId)}`, { signal: ac.signal }),
+        );
+        if (ac.signal.aborted) return;
+        const days = [...new Set(data.places.map((place) => place.day).filter((day): day is number => typeof day === "number"))]
+          .sort((a, b) => a - b);
+        setTripDayState((current) => ({
+          id: travelPlanId,
+          days,
+          focus: current?.id === travelPlanId && current.focus && days.includes(current.focus)
+            ? current.focus
+            : days[days.length - 1] ?? null,
+        }));
+      } catch {
+        if (!ac.signal.aborted) setTripDayState({ id: travelPlanId, days: [], focus: null });
+      }
+    })();
+    return () => ac.abort();
+  }, [travelPlanId]);
 
   function applyEvent(event: AgentEvent, sessionId: string) {
     if (event.type === "title") {
@@ -184,9 +234,14 @@ export function ChatScreen({
     } else if (event.type === "title_error") {
       setStreamError(event.message);
     } else if (event.type === "iteration") {
-      const label = event.phase === "answer" ? "Writing the answer" : "Tools allowed";
-      setStatus(`Pass ${event.n} of ${event.max} · ${label}`);
-      setLive((current) => ({ parts: current?.parts ?? [], status: `Pass ${event.n} of ${event.max}` }));
+      roundRef.current = { n: event.n, max: event.max };
+      if (event.phase === "answer") {
+        setStatus("Writing the answer");
+        setLive((current) => ({ parts: current?.parts ?? [], status: "Writing" }));
+      } else {
+        setStatus("Thinking");
+        setLive((current) => ({ parts: current?.parts ?? [], status: "Thinking" }));
+      }
     } else if (event.type === "partial") {
       setMessages((current) => [...current, event.message]);
       setLive((current) =>
@@ -208,6 +263,8 @@ export function ChatScreen({
     } else if (event.type === "reasoning") {
       setLive((current) => appendReasoning(current, event.text));
     } else if (event.type === "tool_call") {
+      const round = roundRef.current;
+      const running = `Running ${event.call.name}`;
       setLive((current) => ({
         parts: [
           ...(current?.parts ?? []),
@@ -219,9 +276,9 @@ export function ChatScreen({
             pending: true,
           },
         ],
-        status: current?.status ?? "Running a tool",
+        status: running,
       }));
-      setStatus(`Running ${event.call.name}`);
+      setStatus(round && round.n > 1 ? `Pass ${round.n} of ${round.max} · ${running}` : running);
     } else if (event.type === "subagent") {
       setStatus(event.detail);
       setLive((current) => {
@@ -311,6 +368,28 @@ export function ChatScreen({
     runFor.current = id;
     setStreamingId(id);
     return id;
+  }
+
+  async function cleanContext() {
+    if (!activeSessionId || running || cleaning) return;
+    setCleaning(true);
+    setStreamError(null);
+    try {
+      const body = detail?.purpose === "travel" && focusDay ? { day: focusDay } : {};
+      const data = await readJson<{ context: ContextUsage }>(
+        await fetch(`/api/sessions/${activeSessionId}/context`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+      );
+      setContextUsage(data.context);
+      await load(activeSessionId);
+    } catch (err) {
+      setStreamError(err instanceof Error ? err.message : "Could not clean context.");
+    } finally {
+      setCleaning(false);
+    }
   }
 
   async function send() {
@@ -491,24 +570,68 @@ export function ChatScreen({
       : !(threadDetail?.model || selectedEndpoint.model || modelDraft)
         ? "Set a model id before sending."
         : null;
+  const foldedThroughSeq =
+    threadDetail?.compactedSummary?.startsWith(CONTEXT_CLEANED_PREFIX) ? threadDetail.compactedUntilSeq : null;
+  const cleanControls = threadDetail ? (
+    <div className="flex items-center gap-1.5">
+      {threadDetail.purpose === "travel" && tripDays.length > 0 ? (
+        <label className="flex items-center gap-1.5">
+          <span className="hidden text-[11px] tracking-wide text-muted-foreground uppercase sm:inline">Day</span>
+          <select
+            aria-label="Day to keep in context"
+            className="h-8 rounded-lg border border-input bg-background px-2 text-xs"
+            value={focusDay ?? tripDays[tripDays.length - 1]}
+            disabled={running || cleaning}
+            onChange={(event) => {
+              const next = Number(event.target.value);
+              setTripDayState((current) =>
+                current && current.id === travelPlanId ? { ...current, focus: next } : current,
+              );
+            }}
+          >
+            {tripDays.map((day) => (
+              <option key={day} value={day}>
+                Day {day}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-8 px-2 text-xs"
+        disabled={running || cleaning}
+        onClick={() => void cleanContext()}
+      >
+        {cleaning ? "Cleaning" : "Clean context"}
+      </Button>
+    </div>
+  ) : null;
 
   return (
     <div className="flex min-h-0 flex-1">
       <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2 md:px-4">
-          {embedded ? null : <SidebarToggle onOpen={openSidebar} />}
-          <div className="min-w-0 flex-1">
+        {embedded ? (
+          headerPortal ? createPortal(
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+              <div className="min-w-0 flex-1">
             <p className="truncate font-display text-xl leading-none">
               {embedded ? "Trip conversation" : headerTitle}
             </p>
-            <p className="truncate text-xs text-muted-foreground">
-              {embedded
-                ? "Separate from your chat sessions"
-                : threadDetail
-                  ? "Prompt snapshot frozen for this session"
-                  : "Sessions, skills, and a short memory"}
-            </p>
+            <div className="mt-1 flex min-w-0 items-center gap-2">
+              <p className="truncate text-xs text-muted-foreground">
+                {embedded
+                  ? "Separate from your chat sessions"
+                  : threadDetail
+                    ? "Prompt snapshot frozen for this session"
+                    : "Sessions, skills, and a short memory"}
+              </p>
+              <ContextMeter usage={threadDetail ? contextUsage : null} />
+            </div>
           </div>
+          {cleanControls}
           {threadDetail && !embedded ? (
             <div className="flex items-center gap-1">
               <Button type="button" variant="ghost" size="icon-sm" aria-label="Export markdown" onClick={() => void download("md", headerTitle)}>
@@ -519,9 +642,7 @@ export function ChatScreen({
               </Button>
             </div>
           ) : null}
-          {!embedded ? (
-            <>
-              {(settings?.endpoints.length ?? 0) > 1 ? (
+          {(settings?.endpoints.length ?? 0) > 1 ? (
                 <label className="flex items-center gap-1.5">
                   <span className="hidden text-[11px] tracking-wide text-muted-foreground uppercase sm:inline">Host</span>
                   <select
@@ -552,7 +673,7 @@ export function ChatScreen({
                 {modelChoices.length > 0 ? (
                   <select
                     aria-label="Model for this session"
-                    className="h-8 max-w-40 rounded-lg border border-input bg-background px-2 text-xs md:max-w-56"
+                    className="h-8 w-44 rounded-lg border border-input bg-background px-2 text-xs md:w-80"
                     value={modelDraft || threadDetail?.model || selectedEndpoint?.model || ""}
                     disabled={!threadDetail || running}
                     onChange={(event) => {
@@ -579,19 +700,100 @@ export function ChatScreen({
                   />
                 )}
               </label>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Open skills and memory"
-                onClick={() => setInspectorOpen(true)}
-                className="xl:hidden"
-              >
-                <PanelRight />
-              </Button>
-            </>
-          ) : null}
-        </header>
+            </div>,
+            headerPortal,
+          ) : null
+        ) : (
+          <header className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2 md:px-4">
+            <SidebarToggle onOpen={openSidebar} />
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-display text-xl leading-none">{headerTitle}</p>
+              <div className="mt-1 flex min-w-0 items-center gap-2">
+                <p className="truncate text-xs text-muted-foreground">
+                  {threadDetail ? "Prompt snapshot frozen for this session" : "Sessions, skills, and a short memory"}
+                </p>
+                <ContextMeter usage={threadDetail ? contextUsage : null} />
+              </div>
+            </div>
+            {cleanControls}
+            {threadDetail ? (
+              <div className="flex items-center gap-1">
+                <Button type="button" variant="ghost" size="icon-sm" aria-label="Export markdown" onClick={() => void download("md", headerTitle)}>
+                  <Download />
+                </Button>
+                <Button type="button" variant="ghost" size="sm" className="hidden sm:inline-flex" onClick={() => void download("json", headerTitle)}>
+                  JSON
+                </Button>
+              </div>
+            ) : null}
+            {(settings?.endpoints.length ?? 0) > 1 ? (
+              <label className="flex items-center gap-1.5">
+                <span className="hidden text-[11px] tracking-wide text-muted-foreground uppercase sm:inline">Host</span>
+                <select
+                  aria-label="Endpoint for this session"
+                  className="h-8 max-w-36 rounded-lg border border-input bg-background px-2 text-xs md:max-w-48"
+                  value={selectedEndpointId}
+                  disabled={!threadDetail || running}
+                  onChange={(event) => {
+                    const nextEndpointId = event.target.value;
+                    const nextEndpoint = settings?.endpoints.find((endpoint) => endpoint.id === nextEndpointId);
+                    const nextModel =
+                      nextEndpoint?.models.includes(modelDraft)
+                        ? modelDraft
+                        : nextEndpoint?.model || nextEndpoint?.models[0] || "";
+                    setEndpointDraft(nextEndpointId);
+                    setModelDraft(nextModel);
+                    void saveModel(nextModel, nextEndpointId);
+                  }}
+                >
+                  {settings?.endpoints.map((endpoint) => (
+                    <option key={endpoint.id} value={endpoint.id}>{endpoint.name}</option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            <label className="flex min-w-0 items-center gap-2">
+              <span className="hidden text-[11px] tracking-wide text-muted-foreground uppercase sm:inline">Model</span>
+              {modelChoices.length > 0 ? (
+                <select
+                  aria-label="Model for this session"
+                  className="h-8 max-w-40 rounded-lg border border-input bg-background px-2 text-xs md:max-w-56"
+                  value={modelDraft || threadDetail?.model || selectedEndpoint?.model || ""}
+                  disabled={!threadDetail || running}
+                  onChange={(event) => {
+                    setModelDraft(event.target.value);
+                    void saveModel(event.target.value);
+                  }}
+                >
+                  {!modelDraft || modelChoices.includes(modelDraft) ? null : <option value={modelDraft}>{modelDraft}</option>}
+                  {modelChoices.map((id) => (
+                    <option key={id} value={id}>{id}</option>
+                  ))}
+                </select>
+              ) : (
+                <Input
+                  value={modelDraft}
+                  onChange={(event) => setModelDraft(event.target.value)}
+                  onBlur={() => void saveModel()}
+                  placeholder={selectedEndpoint?.model || "model id"}
+                  aria-label="Model id for this session"
+                  className="w-32 md:w-56"
+                  disabled={!threadDetail || running}
+                />
+              )}
+            </label>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Open skills and memory"
+              onClick={() => setInspectorOpen(true)}
+              className="xl:hidden"
+            >
+              <PanelRight />
+            </Button>
+          </header>
+        )}
         {offline ? (
           <p className="border-b border-destructive/30 bg-destructive/10 px-4 py-2 text-sm text-destructive" role="status">
             LM Studio is offline{health?.error ? `: ${health.error}` : "."}
@@ -602,10 +804,26 @@ export function ChatScreen({
           messages={threadMessages}
           live={ownsThread ? live : null}
           compactedSummary={threadDetail?.compactedSummary ?? null}
+          foldedThroughSeq={foldedThroughSeq}
           loading={Boolean(activeSessionId) && !ownsThread && !threadError}
           error={threadError}
           onRetry={() => {
             if (activeSessionId) void load(activeSessionId);
+          }}
+          onConfirmImage={async (toolCallId) => {
+            if (!activeSessionId) return;
+            const data = await readJson<{ content: string }>(
+              await fetch("/api/images/confirm", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ sessionId: activeSessionId, toolCallId }),
+              }),
+            );
+            setMessages((current) =>
+              current.map((message) =>
+                message.role === "tool" && message.toolCallId === toolCallId ? { ...message, content: data.content } : message,
+              ),
+            );
           }}
           empty={
             activeSessionId ? (
@@ -700,6 +918,45 @@ function EmptySession() {
   );
 }
 
+function formatCount(value: number): string {
+  if (value < 1000) return String(value);
+  const scaled = value / 1000;
+  return `${scaled >= 10 ? Math.round(scaled) : scaled.toFixed(1)}k`;
+}
+
+function ContextMeter({ usage }: { usage: ContextUsage | null }) {
+  if (!usage) return null;
+  const limit = usage.limitTokens;
+  const pct = limit ? Math.min(100, Math.round((usage.tokens / limit) * 100)) : null;
+  const label = limit
+    ? `~${formatCount(usage.tokens)} / ${formatCount(limit)} tokens`
+    : `~${formatCount(usage.tokens)} tokens`;
+  const thinking = usage.thinkingChars > 0 ? ` · ${formatCount(usage.thinkingChars)} thinking` : "";
+  return (
+    <div
+      className="flex shrink-0 items-center gap-2"
+      title="Approximate size of the prompt, history, and tools on the next turn. Thinking is stored with the chat and is not sent."
+    >
+      {pct !== null ? (
+        <div
+          className="h-1 w-14 overflow-hidden rounded-full bg-muted"
+          role="progressbar"
+          aria-label="Context used"
+          aria-valuemin={0}
+          aria-valuemax={limit ?? 0}
+          aria-valuenow={Math.min(usage.tokens, limit ?? usage.tokens)}
+        >
+          <div className={`h-full ${pct > 80 ? "bg-destructive" : "bg-copper"}`} style={{ width: `${pct}%` }} />
+        </div>
+      ) : null}
+      <span className="font-mono text-[11px] whitespace-nowrap text-muted-foreground">
+        {label}
+        {thinking}
+      </span>
+    </div>
+  );
+}
+
 function appendText(
   current: { parts: LivePart[]; status: string } | null,
   text: string,
@@ -723,9 +980,9 @@ function appendReasoning(
   const last = parts[parts.length - 1];
   if (last?.kind === "reasoning") {
     return {
-      status: current?.status ?? "Thinking",
+      status: "Thinking",
       parts: [...parts.slice(0, -1), { kind: "reasoning", text: last.text + text }],
     };
   }
-  return { status: current?.status ?? "Thinking", parts: [...parts, { kind: "reasoning", text }] };
+  return { status: "Thinking", parts: [...parts, { kind: "reasoning", text }] };
 }

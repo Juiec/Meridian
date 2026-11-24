@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { createSession, getSession, updateSession } from "@/lib/sessions";
-import { saveEndpointProfiles } from "@/lib/settings";
+import { createSession, getOrCreateTravelSession, getSession, updateSession } from "@/lib/sessions";
+import { rememberModels, saveEndpointProfiles } from "@/lib/settings";
 import { makeHome } from "@/lib/test-home";
 
 beforeEach(() => {
@@ -25,5 +25,23 @@ describe("session endpoint selection", () => {
     const updated = updateSession(session.id, { endpointId: "local", model: "small-model" });
     expect(updated?.endpointId).toBe("local");
     expect(getSession(session.id)?.endpointId).toBe("local");
+  });
+
+  it("moves a trip conversation onto the active saved endpoint when its model is not on the stored one", () => {
+    saveEndpointProfiles(
+      [
+        { id: "default", name: "Cloud", baseUrl: "https://cloud.example/v1", model: "cloud-model" },
+        { id: "local", name: "Local", baseUrl: "http://127.0.0.1:1234/v1", model: "local-model" },
+      ],
+      "local",
+    );
+    rememberModels(["cloud-model"], "default");
+    rememberModels(["local-model"], "local");
+    createSession("old-gguf", "travel", "default");
+
+    const session = getOrCreateTravelSession();
+    expect(session.endpointId).toBe("local");
+    expect(session.model).toBe("local-model");
+    expect(getOrCreateTravelSession().endpointId).toBe("local");
   });
 });

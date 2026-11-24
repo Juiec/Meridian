@@ -1,7 +1,7 @@
 import { connection } from "next/server";
 
 import { caught, jsonError, readBody } from "@/lib/http";
-import { deleteSession, getSession, listMessages, toSummary, updateSession } from "@/lib/sessions";
+import { deleteSession, fileSessionAsTrip, getSession, listMessages, toSummary, updateSession } from "@/lib/sessions";
 import { endpointSettingsList } from "@/lib/settings";
 
 type Context = { params: Promise<{ id: string }> };
@@ -37,6 +37,11 @@ export async function PATCH(request: Request, context: Context) {
   }
   if (typeof body.pinned === "boolean") patch.pinned = body.pinned;
   if (typeof body.archived === "boolean") patch.archived = body.archived;
+  if (body.purpose === "travel") {
+    const filed = fileSessionAsTrip(id);
+    if (!filed) return jsonError("Session not found.", 404);
+    if (Object.keys(patch).length === 0) return Response.json({ session: toSummary(filed) });
+  }
   if (Object.keys(patch).length === 0) return jsonError("Nothing to update.");
   try {
     const session = updateSession(id, patch);

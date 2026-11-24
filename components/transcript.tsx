@@ -4,7 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronRight } from "lucide-react";
 
 import { MarkdownText } from "@/components/markdown-text";
-import { groupMessages, type ToolPart } from "@/lib/group-messages";
+import { Button } from "@/components/ui/button";
+import { CONTEXT_CLEANED_PREFIX } from "@/lib/context-usage";
+import { groupMessages, type ToolPart, type TranscriptItem } from "@/lib/group-messages";
 import type { StoredMessage } from "@/lib/types";
 import { cn } from "cn";
 
@@ -34,22 +36,30 @@ export function Transcript({
   messages,
   live,
   compactedSummary,
+  foldedThroughSeq = null,
   loading,
   error,
   onRetry,
+  onConfirmImage,
   empty,
 }: {
   messages: StoredMessage[];
   live: { parts: LivePart[]; status: string } | null;
   compactedSummary: string | null;
+  foldedThroughSeq?: number | null;
   loading: boolean;
   error: string | null;
   onRetry: () => void;
+  onConfirmImage?: (toolCallId: string) => Promise<void>;
   empty: React.ReactNode;
 }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
-  const items = groupMessages(messages);
+  const folded = foldedThroughSeq ?? null;
+  const earlier = folded === null ? [] : messages.filter((message) => message.seq <= folded);
+  const shown = folded === null ? messages : messages.filter((message) => message.seq > folded);
+  const items = groupMessages(shown);
+  const earlierItems = groupMessages(earlier);
 
   useEffect(() => {
     const el = scrollerRef.current;
@@ -68,7 +78,9 @@ export function Transcript({
       className="scroll-hidden min-h-0 flex-1 overflow-y-auto"
     >
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6 md:px-6">
-        {compactedSummary ? <CompactionNote summary={compactedSummary} /> : null}
+        {compactedSummary ? (
+          <CompactionNote summary={compactedSummary} earlier={earlierItems} onConfirmImage={onConfirmImage} />
+        ) : null}
         {loading && items.length === 0 ? (
           <p className="text-sm text-muted-foreground">Opening the session…</p>
         ) : null}
@@ -85,61 +97,9 @@ export function Transcript({
           </div>
         ) : null}
         {!loading && !error && items.length === 0 && !live ? empty : null}
-        {items.map((item) => {
-          if (item.kind === "user") {
-            return (
-              <div key={item.id} className="ml-auto max-w-[40rem] rounded-2xl bg-secondary px-4 py-3 text-[15px] leading-7">
-                {item.attachments.some((file) => file.kind === "image" && file.dataUrl) ? (
-                  <div className="mb-2 flex flex-wrap gap-2">
-                    {item.attachments.map((file, index) =>
-                      file.kind === "image" && file.dataUrl ? (
-                        <a
-                          key={`${file.name}-${index}`}
-                          href={file.dataUrl}
-                          target="_blank"
-                          rel="noreferrer noopener"
-                          className="block overflow-hidden rounded-lg border border-border/60"
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={file.dataUrl} alt={file.name} loading="lazy" className="size-20 object-cover" />
-                        </a>
-                      ) : null,
-                    )}
-                  </div>
-                ) : null}
-                {item.attachments.length > 0 ? (
-                  <ul className="mb-2 flex flex-wrap gap-1.5">
-                    {item.attachments.map((file) => (
-                      <li key={file.name} className="rounded-full bg-background px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
-                        {file.kind === "image" ? "Image" : "File"} · {file.name}
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-                <p className="whitespace-pre-wrap">{item.content}</p>
-              </div>
-            );
-          }
-          if (item.kind === "note") {
-            return (
-              <p key={item.id} className="text-center text-xs tracking-wide text-muted-foreground">
-                {item.content.split("\n")[0]}
-              </p>
-            );
-          }
-          return (
-            <article key={item.id} className="max-w-[46rem] space-y-3 text-[15px]">
-              {item.reasoning ? <Thinking text={item.reasoning} /> : null}
-              {item.parts.map((part, index) =>
-                part.kind === "text" ? (
-                  <MarkdownText key={`${item.id}-text-${index}`} text={part.text} />
-                ) : (
-                  <ToolCard key={part.id || `${item.id}-tool-${index}`} part={part} />
-                ),
-              )}
-            </article>
-          );
-        })}
+        {items.map((item) => (
+          <TranscriptEntry key={item.id} item={item} onConfirmImage={onConfirmImage} />
+        ))}
         {live ? (
           <article className="max-w-[46rem] space-y-3 text-[15px]" aria-live="polite">
             {live.parts.some((part) => part.kind === "reasoning") ? null : live.parts.length === 0 ? (
@@ -150,7 +110,9 @@ export function Transcript({
                 return <Thinking key={`live-r-${index}`} text={part.text} streaming detail={live.status} />;
               }
               if (part.kind === "text") return <MarkdownText key={`live-t-${index}`} text={part.text} />;
-              return <ToolCard key={part.id || `live-tool-${index}`} part={part} />;
+              return (
+                <ToolCard key={part.id || `live-tool-${index}`} part={part} onConfirmImage={onConfirmImage} />
+              );
             })}
           </article>
         ) : null}
@@ -168,8 +130,17 @@ function DisclosureChevron({ open }: { open: boolean }) {
   );
 }
 
-function CompactionNote({ summary }: { summary: string }) {
+function CompactionNote({
+  summary,
+  earlier,
+  onConfirmImage,
+}: {
+  summary: string;
+  earlier: TranscriptItem[];
+  onConfirmImage?: (toolCallId: string) => Promise<void>;
+}) {
   const [open, setOpen] = useState(false);
+  const cleaned = summary.startsWith(CONTEXT_CLEANED_PREFIX);
   return (
     <div className="rounded-xl border border-border bg-card px-4 py-3 text-sm">
       <button
@@ -180,14 +151,82 @@ function CompactionNote({ summary }: { summary: string }) {
       >
         <DisclosureChevron open={open} />
         <span className="min-w-0 flex-1">
-          <span className="font-medium">Earlier context was compacted</span>
+          <span className="font-medium">{cleaned ? "Context cleaned" : "Earlier context was compacted"}</span>
           <span className="mt-1 block text-muted-foreground">
-            The full transcript stays here. The model continues from a summary.
+            {cleaned
+              ? "Thinking is cleared. The plan below keeps this day, the day before, and at most two days after."
+              : "The full transcript stays here. The model continues from a summary."}
           </span>
         </span>
       </button>
-      {open ? <p className="mt-3 whitespace-pre-wrap text-muted-foreground">{summary}</p> : null}
+      {open ? (
+        <div className="mt-3 space-y-4">
+          {earlier.length > 0 ? (
+            earlier.map((item) => <TranscriptEntry key={item.id} item={item} onConfirmImage={onConfirmImage} />)
+          ) : (
+            <p className="whitespace-pre-wrap text-muted-foreground">{summary}</p>
+          )}
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+function TranscriptEntry({
+  item,
+  onConfirmImage,
+}: {
+  item: TranscriptItem;
+  onConfirmImage?: (toolCallId: string) => Promise<void>;
+}) {
+  if (item.kind === "user") {
+    return (
+      <div className="ml-auto max-w-[40rem] rounded-2xl bg-secondary px-4 py-3 text-[15px] leading-7">
+        {item.attachments.some((file) => file.kind === "image" && file.dataUrl) ? (
+          <div className="mb-2 flex flex-wrap gap-2">
+            {item.attachments.map((file, index) =>
+              file.kind === "image" && file.dataUrl ? (
+                <a
+                  key={`${file.name}-${index}`}
+                  href={file.dataUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="block overflow-hidden rounded-lg border border-border/60"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={file.dataUrl} alt={file.name} loading="lazy" className="size-20 object-cover" />
+                </a>
+              ) : null,
+            )}
+          </div>
+        ) : null}
+        {item.attachments.length > 0 ? (
+          <ul className="mb-2 flex flex-wrap gap-1.5">
+            {item.attachments.map((file) => (
+              <li key={file.name} className="rounded-full bg-background px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
+                {file.kind === "image" ? "Image" : "File"} · {file.name}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <p className="whitespace-pre-wrap">{item.content}</p>
+      </div>
+    );
+  }
+  if (item.kind === "note") {
+    return <p className="text-center text-xs tracking-wide text-muted-foreground">{item.content.split("\n")[0]}</p>;
+  }
+  return (
+    <article className="max-w-[46rem] space-y-3 text-[15px]">
+      {item.reasoning ? <Thinking text={item.reasoning} /> : null}
+      {item.parts.map((part, index) =>
+        part.kind === "text" ? (
+          <MarkdownText key={`${item.id}-text-${index}`} text={part.text} />
+        ) : (
+          <ToolCard key={part.id || `${item.id}-tool-${index}`} part={part} onConfirmImage={onConfirmImage} />
+        ),
+      )}
+    </article>
   );
 }
 
@@ -206,6 +245,12 @@ function thinkingSteps(text: string): string[] {
   return text.trim() ? [text.trim()] : [];
 }
 
+function thinkingCue(detail?: string): string | undefined {
+  const cue = detail?.trim();
+  if (!cue || /^thinking$/i.test(cue) || /^pass \d+ of \d+/i.test(cue)) return undefined;
+  return cue;
+}
+
 function Thinking({
   text,
   streaming = false,
@@ -217,7 +262,8 @@ function Thinking({
 }) {
   const [open, setOpen] = useState(streaming);
   const steps = thinkingSteps(text);
-  const body = steps.length > 0 ? steps : streaming ? [detail?.trim() || "Still working."] : [];
+  const cue = thinkingCue(detail);
+  const body = steps.length > 0 ? steps : streaming && cue ? [cue] : [];
   return (
     <div
       className={cn(
@@ -238,8 +284,8 @@ function Thinking({
           aria-hidden
         />
         <span className={cn("font-medium", streaming && "text-copper")}>Thinking</span>
-        {streaming && !open && detail ? (
-          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{detail}</span>
+        {streaming && !open && cue ? (
+          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{cue}</span>
         ) : (
           <span className="flex-1" />
         )}
@@ -267,9 +313,19 @@ function Thinking({
   );
 }
 
-function ToolCard({ part }: { part: ToolPart }) {
+function ToolCard({
+  part,
+  onConfirmImage,
+}: {
+  part: ToolPart;
+  onConfirmImage?: (toolCallId: string) => Promise<void>;
+}) {
   const [open, setOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
   const summary = toolSummary(part);
+  const pendingImage = imagePending(part.result);
+  const status = part.pending ? "Running" : pendingImage && part.ok !== false ? "Confirm" : part.ok === false ? "Failed" : "Done";
   return (
     <div className="rounded-xl border border-border bg-card">
       <button
@@ -288,14 +344,40 @@ function ToolCard({ part }: { part: ToolPart }) {
         <span className="min-w-0 flex-1">
           <span className="flex items-baseline gap-2">
             <span className="font-mono text-[13px] text-copper">{part.name}</span>
-            <span className="text-[11px] tracking-wide text-muted-foreground uppercase">
-              {part.pending ? "Running" : part.ok === false ? "Failed" : "Done"}
-            </span>
+            <span className="text-[11px] tracking-wide text-muted-foreground uppercase">{status}</span>
           </span>
           <span className="mt-0.5 block truncate text-xs text-muted-foreground">{summary}</span>
         </span>
         <DisclosureChevron open={open} />
       </button>
+      {pendingImage ? (
+        <div className="space-y-2 border-t border-border px-3 py-3">
+          <p className="text-sm leading-6">{pendingImage.prompt}</p>
+          <p className="text-xs text-muted-foreground">
+            {pendingImage.endpointName} · {pendingImage.model}
+          </p>
+          {confirmError || pendingImage.error ? (
+            <p className="text-sm text-destructive">{confirmError || pendingImage.error}</p>
+          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            disabled={confirming || !onConfirmImage}
+            onClick={() => {
+              if (!onConfirmImage) return;
+              setConfirming(true);
+              setConfirmError(null);
+              void onConfirmImage(part.id)
+                .catch((err: unknown) => {
+                  setConfirmError(err instanceof Error ? err.message : "Could not generate the image.");
+                })
+                .finally(() => setConfirming(false));
+            }}
+          >
+            {confirming ? "Generating…" : pendingImage.error ? "Try again" : "Generate image"}
+          </Button>
+        </div>
+      ) : null}
       {part.name === "image_generate" && !part.pending ? (
         <GeneratedImages images={resultImages(part.result)} />
       ) : null}
@@ -368,6 +450,28 @@ function DelegateResult({ result }: { result?: string }) {
       ) : null}
     </div>
   );
+}
+
+function imagePending(result?: string): { prompt: string; endpointName: string; model: string; error?: string } | null {
+  if (!result) return null;
+  try {
+    const parsed = JSON.parse(result) as {
+      needsConfirm?: boolean;
+      prompt?: string;
+      endpointName?: string;
+      model?: string;
+      error?: string;
+    };
+    if (parsed.needsConfirm !== true) return null;
+    return {
+      prompt: typeof parsed.prompt === "string" ? parsed.prompt : "",
+      endpointName: typeof parsed.endpointName === "string" ? parsed.endpointName : "Image Studio",
+      model: typeof parsed.model === "string" ? parsed.model : "",
+      error: typeof parsed.error === "string" ? parsed.error : undefined,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function toolSummary(part: ToolPart): string {

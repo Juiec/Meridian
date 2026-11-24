@@ -54,6 +54,7 @@ export type SessionRecord = {
 export type SessionSummary = {
   id: string;
   title: string;
+  purpose: "chat" | "travel";
   endpointId: string;
   model: string;
   createdAt: number;

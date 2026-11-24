@@ -238,3 +238,53 @@ export async function listModels(input: {
     .filter((id) => id.length > 0);
   return [...new Set(ids)].sort((a, b) => a.localeCompare(b));
 }
+
+function positiveContext(value: unknown): number | null {
+  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return Math.round(parsed);
+}
+
+/** Prefer the loaded window. Fall back to the model's maximum. */
+export function contextLimitFromModel(record: Record<string, unknown>): number | null {
+  return (
+    positiveContext(record.loaded_context_length) ??
+    positiveContext(record.max_context_length) ??
+    positiveContext(record.context_length)
+  );
+}
+
+export async function modelContextLimit(input: {
+  baseUrl: string;
+  model: string;
+  apiKey?: string;
+  signal?: AbortSignal;
+}): Promise<number | null> {
+  const model = input.model.trim();
+  if (!input.baseUrl.trim() || !model) return null;
+  const headers = input.apiKey ? { Authorization: `Bearer ${input.apiKey}` } : {};
+  let root: URL;
+  try {
+    root = new URL(input.baseUrl);
+  } catch {
+    return null;
+  }
+  root.pathname = "/api/v0/models";
+  root.search = "";
+  const openai = `${input.baseUrl.replace(/\/$/, "")}/models`;
+  const urls = [root.toString(), openai];
+  for (const url of urls) {
+    try {
+      const response = await fetch(url, { headers, signal: input.signal });
+      if (!response.ok) continue;
+      const json = (await response.json()) as { data?: Array<Record<string, unknown>> };
+      const match = (json.data ?? []).find((item) => item.id === model);
+      if (!match) continue;
+      const limit = contextLimitFromModel(match);
+      if (limit) return limit;
+    } catch {
+      if (input.signal?.aborted) return null;
+    }
+  }
+  return null;
+}

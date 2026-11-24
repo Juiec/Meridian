@@ -133,6 +133,24 @@ export function groupPlaces(places: TripPlace[]): { day: number | null; places: 
     .map(([key, list]) => ({ day: key === "none" ? null : Number(key), places: list }));
 }
 
+const AIR_HOP = /\b(flight|flights|fly|flying|plane|air|airport)\b/i;
+
+export function hopByAir(from: TripPlace, to: TripPlace): boolean {
+  return AIR_HOP.test(from.name) || AIR_HOP.test(to.name);
+}
+
+/** Hops between days. A flight in the name is by air; every other hop is ground. */
+export function dayLinks(places: TripPlace[]): { from: TripPlace; to: TripPlace; air: boolean }[] {
+  const days = groupPlaces(places).filter((group) => group.day !== null);
+  const links: { from: TripPlace; to: TripPlace; air: boolean }[] = [];
+  for (let index = 1; index < days.length; index += 1) {
+    const from = days[index - 1].places[days[index - 1].places.length - 1];
+    const to = days[index].places[0];
+    if (from && to) links.push({ from, to, air: hopByAir(from, to) });
+  }
+  return links;
+}
+
 export function straightLegs(places: TripPlace[]): TripLeg[] {
   const legs: TripLeg[] = [];
   for (const group of groupPlaces(places)) {

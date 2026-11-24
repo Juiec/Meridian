@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 
 import { writeAtomic } from "@/lib/atomic";
-import { travelPlanPath, travelSettingsPath } from "@/lib/paths";
+import { travelPlanPath, travelSettingsPath, tripPlanPath } from "@/lib/paths";
 import { classifyUrl } from "@/lib/net";
 import { MAX_TRIP_DAYS, type TravelPublicSettings, type TripKind, type TripPlace } from "@/lib/travel-types";
 
@@ -14,20 +14,34 @@ type SettingsFile = {
   priceApiKey?: string;
 };
 
-function readPlan(): TripPlace[] {
-  const file = travelPlanPath();
+function planFile(planId?: string): string {
+  return planId ? tripPlanPath(planId) : travelPlanPath();
+}
+
+function readPlan(planId?: string): TripPlace[] {
+  const file = planFile(planId);
   if (!existsSync(file)) return [];
   const parsed = JSON.parse(readFileSync(file, "utf8")) as { places?: TripPlace[] };
   if (!parsed || !Array.isArray(parsed.places)) throw new Error("Trip plan file is not valid.");
   return parsed.places.filter((place) => place && typeof place.id === "string" && typeof place.name === "string");
 }
 
-function writePlan(places: TripPlace[]) {
-  writeAtomic(travelPlanPath(), `${JSON.stringify({ places }, null, 2)}\n`);
+function writePlan(places: TripPlace[], planId?: string) {
+  writeAtomic(planFile(planId), `${JSON.stringify({ places }, null, 2)}\n`);
 }
 
-export function listTripPlaces(): TripPlace[] {
-  return readPlan();
+/** Create an empty plan, or give the original trip the places already saved in travel-plan.json. */
+export function prepareTripPlan(planId: string, seed: "legacy" | "empty") {
+  if (existsSync(tripPlanPath(planId))) return;
+  if (seed === "legacy" && existsSync(travelPlanPath())) {
+    writePlan(readPlan(), planId);
+    return;
+  }
+  writePlan([], planId);
+}
+
+export function listTripPlaces(planId?: string): TripPlace[] {
+  return readPlan(planId);
 }
 
 export function addTripPlace(input: {
@@ -37,8 +51,8 @@ export function addTripPlace(input: {
   kind?: TripKind;
   day?: number | null;
   note?: string;
-}): TripPlace {
-  const places = readPlan();
+}, planId?: string): TripPlace {
+  const places = readPlan(planId);
   if (places.length >= MAX_PLACES) throw new Error("The trip map is full (40 places). Remove one first.");
   const name = input.name.trim();
   if (!name || name.length > 120) throw new Error("Place name must be 1–120 characters.");
@@ -59,12 +73,12 @@ export function addTripPlace(input: {
     note: (input.note ?? "").trim().slice(0, 280),
   };
   places.push(place);
-  writePlan(places);
+  writePlan(places, planId);
   return place;
 }
 
-export function updateTripPlace(id: string, patch: { day?: number | null; kind?: TripKind; note?: string }): TripPlace {
-  const places = readPlan();
+export function updateTripPlace(id: string, patch: { day?: number | null; kind?: TripKind; note?: string }, planId?: string): TripPlace {
+  const places = readPlan(planId);
   const index = places.findIndex((place) => place.id === id);
   if (index < 0) throw new Error("That place is not on the trip.");
   const current = places[index];
@@ -80,15 +94,15 @@ export function updateTripPlace(id: string, patch: { day?: number | null; kind?:
   }
   if (patch.note !== undefined) current.note = patch.note.trim().slice(0, 280);
   places[index] = current;
-  writePlan(places);
+  writePlan(places, planId);
   return current;
 }
 
-export function removeTripPlace(id: string) {
-  const places = readPlan();
+export function removeTripPlace(id: string, planId?: string) {
+  const places = readPlan(planId);
   const next = places.filter((place) => place.id !== id);
   if (next.length === places.length) throw new Error("That place is not on the trip.");
-  writePlan(next);
+  writePlan(next, planId);
 }
 
 function readSettingsFile(): SettingsFile | null {

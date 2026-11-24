@@ -3,7 +3,8 @@ import { db } from "@/lib/db";
 import { deleteImagesForSession } from "@/lib/image-store";
 import { readEntries } from "@/lib/memory";
 import { assembleSystemPrompt } from "@/lib/prompt";
-import { getSettings } from "@/lib/settings";
+import { endpointSettingsList, getSettings } from "@/lib/settings";
+import { prepareTripPlan } from "@/lib/travel-store";
 import { discoverSkills, skillsIndexHash } from "@/lib/skills";
 import { isChatMode } from "@/lib/chat-mode";
 import type { Attachment, ChatMode, SessionRecord, SessionSummary, StoredMessage, ToolCallRecord } from "@/lib/types";
@@ -99,6 +100,7 @@ export function toSummary(session: SessionRecord): SessionSummary {
   return {
     id: session.id,
     title: session.title,
+    purpose: session.purpose === "travel" ? "travel" : "chat",
     endpointId: session.endpointId,
     model: session.model,
     createdAt: session.createdAt,
@@ -119,14 +121,18 @@ function likeTerm(query: string): string {
 export function listSessions(options?: {
   query?: string;
   archived?: "hide" | "only" | "all";
-  purpose?: "chat" | "travel";
+  purpose?: "chat" | "travel" | "all";
 }): SessionSummary[] {
   const archived = options?.archived ?? "hide";
   const purpose = options?.purpose ?? "chat";
   const query = options?.query?.trim() ?? "";
-  const where: string[] = ["purpose = ?"];
+  const where: string[] = [];
   const params: string[] = [];
-  params.push(purpose);
+  if (purpose === "all") where.push("purpose IN ('chat', 'travel')");
+  else {
+    where.push("purpose = ?");
+    params.push(purpose);
+  }
   if (archived === "hide") where.push("archived = 0");
   if (archived === "only") where.push("archived = 1");
   if (query) {
@@ -196,11 +202,48 @@ export function createSession(
   return session;
 }
 
+function alignTravelSession(session: SessionRecord): SessionRecord {
+  const profiles = endpointSettingsList();
+  const stored = profiles.find((endpoint) => endpoint.endpointId === session.endpointId);
+  const active = getSettings();
+  const catalog = stored?.models ?? [];
+  const modelFits = Boolean(stored) && (catalog.length === 0 || !session.model || catalog.includes(session.model));
+  if (modelFits) return session;
+  const model = active.model || session.model;
+  if (session.endpointId === active.endpointId && session.model === model) return session;
+  return updateSession(session.id, { endpointId: active.endpointId, model }) ?? session;
+}
+
+export function oldestTravelSessionId(): string | null {
+  const row = db().prepare("SELECT id FROM sessions WHERE purpose = 'travel' ORDER BY created_at LIMIT 1").get() as
+    | { id: string }
+    | undefined;
+  return row?.id ?? null;
+}
+
+export function fileSessionAsTrip(id: string): SessionRecord | null {
+  const current = getSession(id);
+  if (!current || current.purpose === "subagent") return null;
+  if (current.purpose !== "travel") {
+    db().prepare("UPDATE sessions SET purpose = 'travel', updated_at = ? WHERE id = ?").run(Date.now(), id);
+  }
+  const oldest = oldestTravelSessionId();
+  prepareTripPlan(id, id === oldest ? "legacy" : "empty");
+  return getSession(id);
+}
+
+export function createTripPlan(): SessionRecord {
+  const session = createSession(undefined, "travel");
+  prepareTripPlan(session.id, "empty");
+  const titled = updateSession(session.id, { title: "New trip" }) ?? session;
+  return alignTravelSession(titled);
+}
+
 export function getOrCreateTravelSession(): SessionRecord {
   const existing = db()
     .prepare(`SELECT ${SESSION_COLUMNS} FROM sessions WHERE purpose = 'travel' ORDER BY created_at LIMIT 1`)
     .get() as SessionRow | undefined;
-  if (existing) return mapSession(existing);
+  if (existing) return alignTravelSession(mapSession(existing));
   const session = createSession(undefined, "travel");
   return updateSession(session.id, { title: "Trip planning" }) ?? session;
 }
@@ -263,7 +306,7 @@ export function updateSession(
 
 export function updateSessionTitleIfDefault(id: string, title: string): SessionRecord | null {
   db()
-    .prepare("UPDATE sessions SET title = ?, updated_at = ? WHERE id = ? AND title = 'New session'")
+    .prepare("UPDATE sessions SET title = ?, updated_at = ? WHERE id = ? AND title IN ('New session', 'New trip')")
     .run(title, Date.now(), id);
   return getSession(id);
 }
@@ -288,6 +331,16 @@ export function createSubagentSession(input: {
   const session = getSession(id);
   if (!session) throw new Error("Subagent session was not saved.");
   return session;
+}
+
+export function updateToolMessage(sessionId: string, toolCallId: string, content: string): boolean {
+  const now = Date.now();
+  const result = db()
+    .prepare("UPDATE messages SET content = ? WHERE session_id = ? AND tool_call_id = ? AND role = 'tool'")
+    .run(content, sessionId, toolCallId);
+  if (result.changes === 0) return false;
+  db().prepare("UPDATE sessions SET updated_at = ? WHERE id = ?").run(now, sessionId);
+  return true;
 }
 
 export function deleteSession(id: string): boolean {
@@ -338,6 +391,16 @@ export function insertMessage(input: {
   const saved = messages.find((message) => message.id === id);
   if (!saved) throw new Error("Message was not saved.");
   return saved;
+}
+
+export function clearMessageReasoning(sessionId: string): number {
+  const row = db()
+    .prepare(
+      "SELECT COALESCE(SUM(LENGTH(reasoning)), 0) AS bytes FROM messages WHERE session_id = ? AND reasoning IS NOT NULL",
+    )
+    .get(sessionId) as { bytes: number | bigint };
+  db().prepare("UPDATE messages SET reasoning = NULL WHERE session_id = ?").run(sessionId);
+  return typeof row.bytes === "bigint" ? Number(row.bytes) : row.bytes;
 }
 
 export function lastUserMessage(sessionId: string): StoredMessage | null {

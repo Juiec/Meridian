@@ -1,7 +1,7 @@
 import { connection } from "next/server";
 
 import { caught, jsonError, readBody } from "@/lib/http";
-import { geocodePlace, tripView } from "@/lib/travel";
+import { geocodePlace, openTrip, tripView } from "@/lib/travel";
 import { addTripPlace, removeTripPlace, updateTripPlace } from "@/lib/travel-store";
 import type { TripKind } from "@/lib/travel-types";
 
@@ -29,6 +29,7 @@ export async function POST(request: Request) {
       label = found.results[0].label;
     }
     const kind = typeof body.kind === "string" ? (body.kind as TripKind) : "destination";
+    const trip = openTrip(typeof body.trip === "string" ? body.trip : undefined);
     addTripPlace({
       name: label,
       lat,
@@ -36,8 +37,8 @@ export async function POST(request: Request) {
       kind,
       day: body.day === undefined || body.day === "" || body.day === null ? null : num(body.day),
       note: typeof body.note === "string" ? body.note : "",
-    });
-    return Response.json(await tripView());
+    }, trip);
+    return Response.json(await tripView(trip));
   } catch (err) {
     return caught(err, 400);
   }
@@ -50,12 +51,13 @@ export async function PATCH(request: Request) {
   try {
     const id = typeof body.id === "string" ? body.id : "";
     if (!id) return jsonError("Place id is required.");
+    const trip = openTrip(typeof body.trip === "string" ? body.trip : undefined);
     updateTripPlace(id, {
       day: body.day === undefined ? undefined : body.day === null || body.day === "" ? null : num(body.day),
       kind: typeof body.kind === "string" ? (body.kind as TripKind) : undefined,
       note: typeof body.note === "string" ? body.note : undefined,
-    });
-    return Response.json(await tripView());
+    }, trip);
+    return Response.json(await tripView(trip));
   } catch (err) {
     return caught(err, 400);
   }
@@ -64,10 +66,12 @@ export async function PATCH(request: Request) {
 export async function DELETE(request: Request) {
   await connection();
   try {
-    const id = new URL(request.url).searchParams.get("id") ?? "";
+    const url = new URL(request.url);
+    const id = url.searchParams.get("id") ?? "";
+    const trip = openTrip(url.searchParams.get("trip") ?? undefined);
     if (!id) return jsonError("Place id is required.");
-    removeTripPlace(id);
-    return Response.json(await tripView());
+    removeTripPlace(id, trip);
+    return Response.json(await tripView(trip));
   } catch (err) {
     return caught(err, 400);
   }

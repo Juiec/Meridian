@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { POST } from "@/app/api/images/route";
+import { makeHome } from "@/lib/test-home";
 
 vi.mock("@/lib/settings", () => ({
   endpointSettingsList: () => [
@@ -14,6 +15,10 @@ vi.mock("@/lib/settings", () => ({
     },
   ],
 }));
+
+beforeEach(() => {
+  makeHome();
+});
 
 afterEach(() => {
   vi.unstubAllGlobals();

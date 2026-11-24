@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import {
   createSession,
+  fileSessionAsTrip,
   exportSession,
   getOrCreateTravelSession,
   importSession,
@@ -33,6 +34,11 @@ describe("session tools", () => {
     expect(listSessions().map((session) => session.id)).toContain(regular.id);
     expect(listSessions().map((session) => session.id)).not.toContain(planner.id);
     expect(listSessions({ purpose: "travel" }).map((session) => session.id)).toEqual([planner.id]);
+    expect(listSessions({ purpose: "all" }).map((session) => session.purpose).sort()).toEqual(["chat", "travel"]);
+    const filed = fileSessionAsTrip(regular.id);
+    expect(filed?.purpose).toBe("travel");
+    expect(listSessions().map((session) => session.id)).not.toContain(regular.id);
+    expect(listSessions({ purpose: "travel" }).map((session) => session.id)).toContain(regular.id);
   });
 
   it("pins, archives, searches, and round-trips an export", () => {

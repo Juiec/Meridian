@@ -60,6 +60,17 @@ export function travelPlanPath(): string {
   return path.join(dataDir(), "travel-plan.json");
 }
 
+export function tripPlanPath(id: string): string {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    throw new Error("Trip id is not valid.");
+  }
+  return path.join(dataDir(), "trips", `${id}.json`);
+}
+
 export function travelSettingsPath(): string {
   return path.join(dataDir(), "travel-settings.json");
+}
+
+export function imageSettingsPath(): string {
+  return path.join(dataDir(), "image-settings.json");
 }

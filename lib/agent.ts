@@ -12,6 +12,7 @@ import { filterToolsForMode, modeInstructions } from "@/lib/chat-mode";
 import { deriveTitle, parseSkillCommand } from "@/lib/skill-command";
 import { discoverSkills, readSkillFile, skillsIndexHash } from "@/lib/skills";
 import {
+  fileSessionAsTrip,
   getSession,
   insertMessage,
   lastUserMessage,
@@ -190,7 +191,8 @@ async function settleFirstTitle(input: {
   answer: string;
 }): Promise<void> {
   const session = getSession(input.sessionId);
-  if (!session || session.purpose !== "chat" || session.title !== "New session") return;
+  if (!session || session.purpose === "subagent") return;
+  if (session.title !== "New session" && session.title !== "New trip") return;
   const first = listMessages(input.sessionId).find((message) => message.role === "user");
   if (!first) return;
 
@@ -362,7 +364,9 @@ export async function runTurn(input: {
     updateSession(input.sessionId, { skillsIndexHash: hash });
   }
 
-  const requestedMode = parseSkillCommand(content)?.mode;
+  const command = parseSkillCommand(content);
+  if (command?.skills.includes("itinerary-day")) fileSessionAsTrip(input.sessionId);
+  const requestedMode = command?.mode;
   if (requestedMode && requestedMode !== session.chatMode) {
     updateSession(input.sessionId, { chatMode: requestedMode });
   }

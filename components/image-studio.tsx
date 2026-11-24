@@ -63,6 +63,7 @@ export function ImageStudio() {
   const [editImage, setEditImage] = useState<File | null>(null);
   const [editPreview, setEditPreview] = useState<string | null>(null);
   const [endpointId, setEndpointId] = useState("");
+  const [imageDefaultId, setImageDefaultId] = useState("");
   const [modelDraft, setModelDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -100,15 +101,50 @@ export function ImageStudio() {
     if (previewUrl.current) URL.revokeObjectURL(previewUrl.current);
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const data = await readJson<{ endpointId: string; model: string; error?: string }>(await fetch("/api/image-settings"));
+        if (cancelled) return;
+        if (data.endpointId) {
+          setEndpointId(data.endpointId);
+          setImageDefaultId(data.endpointId);
+        }
+        if (data.model) setModelDraft(data.model);
+        if (data.error) setError(data.error);
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Could not load the image endpoint.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const endpoints = settings?.endpoints ?? [];
-  const selectedEndpoint =
-    endpoints.find((endpoint) => endpoint.id === endpointId) ??
-    endpoints.find((endpoint) => endpoint.id === settings?.endpointId) ??
-    endpoints[0];
+  const selectedEndpoint = endpoints.find((endpoint) => endpoint.id === endpointId);
   const imageModels = selectedEndpoint
     ? [...new Set([selectedEndpoint.model, ...selectedEndpoint.models].map((model) => model.trim()).filter(Boolean))]
     : [];
   const model = imageModels.includes(modelDraft) ? modelDraft : selectedEndpoint?.model || imageModels[0] || "";
+
+  async function rememberImageDefault(nextEndpointId: string, nextModel: string) {
+    try {
+      const data = await readJson<{ endpointId: string; model: string }>(
+        await fetch("/api/image-settings", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpointId: nextEndpointId, model: nextModel }),
+        }),
+      );
+      setImageDefaultId(data.endpointId);
+      setModelDraft(data.model);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save the image default.");
+    }
+  }
 
   function selectEditImage(file: File | null) {
     if (previewUrl.current) URL.revokeObjectURL(previewUrl.current);
@@ -311,14 +347,16 @@ export function ImageStudio() {
                   disabled={endpoints.length === 0}
                   onChange={(event) => {
                     const next = endpoints.find((item) => item.id === event.target.value);
+                    const nextModel = next?.model ?? next?.models[0] ?? "";
                     setEndpointId(event.target.value);
-                    setModelDraft(next?.model ?? next?.models[0] ?? "");
+                    setModelDraft(nextModel);
                     setError(null);
+                    void rememberImageDefault(event.target.value, nextModel);
                   }}
                 >
                   {endpoints.map((endpoint) => (
                     <option key={endpoint.id} value={endpoint.id}>
-                      {endpoint.name}{endpoint.id === settings?.endpointId ? " · default" : ""}
+                      {endpoint.name}{endpoint.id === imageDefaultId ? " · image default" : ""}
                     </option>
                   ))}
                 </select>
@@ -330,7 +368,10 @@ export function ImageStudio() {
                     aria-label="Image model"
                     className="mt-2 h-10 w-full rounded-lg border border-input bg-background px-2.5 text-sm font-normal outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                     value={model}
-                    onChange={(event) => setModelDraft(event.target.value)}
+                    onChange={(event) => {
+                      setModelDraft(event.target.value);
+                      if (selectedEndpoint) void rememberImageDefault(selectedEndpoint.id, event.target.value);
+                    }}
                   >
                     {imageModels.map((imageModel) => <option key={imageModel} value={imageModel}>{imageModel}</option>)}
                   </select>
@@ -353,7 +394,7 @@ export function ImageStudio() {
                 </p>
               )}
               <p className="text-[11px] leading-5 text-muted-foreground">
-                Choose an endpoint that supports the OpenAI-compatible Images API and the selected image model.
+                Chat image requests use this endpoint and model after you confirm. The default model is gpt-image-2 when this endpoint offers it.
               </p>
             </div>
 

@@ -1,10 +1,12 @@
 import { messageOf } from "@/lib/errors";
 import { classifyUrl, explainUrlBlock } from "@/lib/net";
 import { haversineKm, illustrativeQuotes, normalizeQuotes, straightLegs } from "@/lib/travel-math";
+import { getSession, oldestTravelSessionId } from "@/lib/sessions";
 import {
   addTripPlace,
   getTravelSettings,
   listTripPlaces,
+  prepareTripPlan,
   removeTripPlace,
   toPublicTravelSettings,
   updateTripPlace,
@@ -22,7 +24,7 @@ const HOSTS = {
 let nominatimAt = 0;
 let nominatimChain: Promise<void> = Promise.resolve();
 
-async function fetchTravelJson(url: string, host: string): Promise<unknown> {
+async function fetchTravelJson(url: string, host: string, timeoutMs = 12_000): Promise<unknown> {
   const classified = classifyUrl(url);
   if (!classified.ok) throw new Error(classified.error);
   if (classified.url.hostname !== host) throw new Error("That host is not used for travel lookups.");
@@ -35,7 +37,7 @@ async function fetchTravelJson(url: string, host: string): Promise<unknown> {
       referer: "http://127.0.0.1:43123/",
     },
     redirect: "manual",
-    signal: AbortSignal.timeout(12_000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (response.status >= 300 && response.status < 400) throw new Error("Travel lookups do not follow redirects.");
   if (!response.ok) throw new Error(`Travel data returned HTTP ${response.status}.`);
@@ -68,32 +70,68 @@ function textOf(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+async function geocodeOpenMeteo(query: string): Promise<GeoHit[]> {
+  const url = `https://${HOSTS.geocode}/v1/search?name=${encodeURIComponent(query)}&count=5&language=en&format=json`;
+  const payload = (await fetchTravelJson(url, HOSTS.geocode, 4_000)) as {
+    results?: { name?: string; country?: string; admin1?: string; latitude?: number; longitude?: number }[];
+  };
+  return (payload.results ?? [])
+    .filter((item) => typeof item.latitude === "number" && typeof item.longitude === "number" && item.name)
+    .slice(0, 5)
+    .map((item) => {
+      const parts = [item.admin1, item.country].filter((part) => part && part !== item.name);
+      return {
+        name: item.name ?? query,
+        label: [item.name, ...parts].filter(Boolean).join(", "),
+        lat: item.latitude as number,
+        lng: item.longitude as number,
+        country: item.country ?? null,
+      };
+    });
+}
+
+async function geocodeNominatim(query: string): Promise<GeoHit[]> {
+  const url = `https://${HOSTS.nominatim}/search?q=${encodeURIComponent(query)}&format=jsonv2&limit=5&addressdetails=1`;
+  const payload = (await nominatim(() => fetchTravelJson(url, HOSTS.nominatim))) as {
+    name?: string;
+    display_name?: string;
+    lat?: string;
+    lon?: string;
+    address?: { country?: string };
+  }[];
+  return (Array.isArray(payload) ? payload : [])
+    .map((item) => ({
+      name: item.name || item.display_name || query,
+      label: item.display_name || item.name || query,
+      lat: Number(item.lat),
+      lng: Number(item.lon),
+      country: item.address?.country ?? null,
+    }))
+    .filter((item) => Number.isFinite(item.lat) && Number.isFinite(item.lng))
+    .slice(0, 5);
+}
+
 export async function geocodePlace(query: string): Promise<{ ok: true; results: GeoHit[] } | { ok: false; error: string }> {
   const q = query.trim();
   if (!q || q.length > 120) return { ok: false, error: "Query must be 1–120 characters." };
+  let meteoError: string | null = null;
   try {
-    const url = `https://${HOSTS.geocode}/v1/search?name=${encodeURIComponent(q)}&count=5&language=en&format=json`;
-    const payload = (await fetchTravelJson(url, HOSTS.geocode)) as {
-      results?: { name?: string; country?: string; admin1?: string; latitude?: number; longitude?: number }[];
-    };
-    const results: GeoHit[] = (payload.results ?? [])
-      .filter((item) => typeof item.latitude === "number" && typeof item.longitude === "number" && item.name)
-      .slice(0, 5)
-      .map((item) => {
-        const parts = [item.name, item.admin1, item.country].filter((part) => part && part !== item.name);
-        return {
-          name: item.name ?? q,
-          label: [item.name, ...parts].filter(Boolean).join(", "),
-          lat: item.latitude as number,
-          lng: item.longitude as number,
-          country: item.country ?? null,
-        };
-      });
-    if (results.length === 0) return { ok: false, error: `No geocoding match for “${q}”.` };
-    return { ok: true, results };
+    const results = await geocodeOpenMeteo(q);
+    if (results.length > 0) return { ok: true, results };
   } catch (err) {
-    return { ok: false, error: messageOf(err) };
+    meteoError = messageOf(err);
   }
+  try {
+    const results = await geocodeNominatim(q);
+    if (results.length > 0) return { ok: true, results };
+  } catch (err) {
+    const fallback = messageOf(err);
+    return {
+      ok: false,
+      error: meteoError ? `${meteoError} OpenStreetMap lookup also failed: ${fallback}` : fallback,
+    };
+  }
+  return { ok: false, error: `No geocoding match for “${q}”.` };
 }
 
 function weatherPhrase(code: number): string {
@@ -326,13 +364,28 @@ export async function enrichLegs(places = listTripPlaces()): Promise<TripLeg[]> 
   return [...enriched, ...legs.slice(8)];
 }
 
-export async function tripView() {
-  const places = listTripPlaces();
+export function openTrip(explicit?: string): string | undefined {
+  if (explicit) {
+    const session = getSession(explicit);
+    if (!session || session.purpose !== "travel") throw new Error("Trip not found.");
+  }
+  const id = explicit || oldestTravelSessionId() || undefined;
+  if (!id) return undefined;
+  prepareTripPlan(id, id === oldestTravelSessionId() ? "legacy" : "empty");
+  return id;
+}
+
+export async function tripView(planId?: string) {
+  const places = listTripPlaces(openTrip(planId));
   const legs = await enrichLegs(places);
   return { places, legs, settings: toPublicTravelSettings() };
 }
 
-export async function executeTravelTool(name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+export async function executeTravelTool(
+  name: string,
+  args: Record<string, unknown>,
+  planId?: string,
+): Promise<Record<string, unknown>> {
   if (name === "travel_geocode") {
     const found = await geocodePlace(textOf(args.query));
     if (!found.ok) return { ok: false, error: found.error, text: found.error };
@@ -370,23 +423,24 @@ export async function executeTravelTool(name: string, args: Record<string, unkno
     });
   }
   if (name === "travel_plan") {
-    return planAction(args);
+    return planAction(args, planId);
   }
   return { ok: false, error: `Unknown travel tool ${name}.`, text: `Unknown travel tool ${name}.` };
 }
 
-async function planAction(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+async function planAction(args: Record<string, unknown>, requested?: string): Promise<Record<string, unknown>> {
+  const planId = openTrip(requested);
   const action = textOf(args.action);
   try {
     if (action === "list") {
-      const places = listTripPlaces();
+      const places = listTripPlaces(planId);
       return { ok: true, text: places.length ? `${places.length} places on the map.` : "The trip map is empty.", places };
     }
     if (action === "remove") {
       const id = textOf(args.id);
       if (!id) return { ok: false, error: "Remove needs id.", text: "Remove needs id." };
-      removeTripPlace(id);
-      return { ok: true, text: "Removed from the map.", places: listTripPlaces() };
+      removeTripPlace(id, planId);
+      return { ok: true, text: "Removed from the map.", places: listTripPlaces(planId) };
     }
     if (action === "update") {
       const id = textOf(args.id);
@@ -396,7 +450,7 @@ async function planAction(args: Record<string, unknown>): Promise<Record<string,
         day: args.day === undefined ? undefined : num(args.day),
         kind: kind ? (kind as TripKind) : undefined,
         note: args.note === undefined ? undefined : textOf(args.note),
-      });
+      }, planId);
       return { ok: true, text: `Updated ${place.name}.`, place };
     }
     if (action === "add") {
@@ -421,7 +475,7 @@ async function planAction(args: Record<string, unknown>): Promise<Record<string,
         kind: kind || "destination",
         day: args.day === undefined ? null : num(args.day),
         note: textOf(args.note),
-      });
+      }, planId);
       return { ok: true, text: `Pinned ${place.name}${place.day ? ` on day ${place.day}` : ""}.`, place };
     }
     return { ok: false, error: "Action must be list, add, remove, or update.", text: "Unknown plan action." };

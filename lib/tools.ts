@@ -1,7 +1,9 @@
 import { fetchPublicUrl } from "@/lib/fetch-url";
-import { generateImages, ImageRequestError } from "@/lib/image-generator";
+import { validSize } from "@/lib/image-generator";
+import { ImageSettingsError, resolveImageTarget } from "@/lib/image-settings";
 import { applyMemory, MEMORY_LIMITS, type MemoryOp, type MemoryTarget } from "@/lib/memory";
 import { discoverSkills, readSkillFile } from "@/lib/skills";
+import { fileSessionAsTrip, getSession } from "@/lib/sessions";
 import { executeTravelTool } from "@/lib/travel";
 
 export type ToolDefinition = {
@@ -129,7 +131,7 @@ export const TOOLS: ToolDefinition[] = [
     function: {
       name: "image_generate",
       description:
-        "Create images from a text prompt using the saved OpenAI-compatible Images endpoint. Every image is saved under data/images with a record in the backend image log, like a chat message. Use it when the user asks for an image, or after /image. Returns image ids and /api/images/<id> links; use only the links the tool returns.",
+        "Prepare an image with the saved Image Studio endpoint and its API key. Does not call the provider. The user confirms in the chat, and that confirmation sends the request. Omit endpointId and model so the Image Studio default is used (gpt-image-2 when that endpoint offers it). Use it when the user asks for an image, or after /image.",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -143,8 +145,14 @@ export const TOOLS: ToolDefinition[] = [
             description: 'Optional: "auto", "1024x1024", "1536x1024", "1024x1536", or WIDTHxHEIGHT (256-4096, multiples of 16).',
           },
           n: { type: "integer", minimum: 1, maximum: 10, description: "How many images, 1 to 10. Defaults to 1." },
-          endpointId: { type: "string", description: "Optional saved endpoint id. Defaults to this chat's endpoint." },
-          model: { type: "string", description: "Optional image model id. Defaults to the endpoint's model." },
+          endpointId: {
+            type: "string",
+            description: "Optional saved image endpoint id. Omit it to use the Image Studio default. A chat endpoint is refused.",
+          },
+          model: {
+            type: "string",
+            description: "Optional image model id. Defaults to gpt-image-2 when the Image Studio endpoint offers it.",
+          },
         },
         required: ["prompt"],
       },
@@ -313,7 +321,10 @@ export async function executeTool(
   if (!parsed.ok) return { ok: false, error: parsed.error };
   const args = parsed.value;
 
-  if (name.startsWith("travel_")) return executeTravelTool(name, args);
+  if (name.startsWith("travel_")) {
+    const session = context.sessionId ? getSession(context.sessionId) : null;
+    return executeTravelTool(name, args, session?.purpose === "travel" ? session.id : undefined);
+  }
 
   if (name === "memory") {
     const target = args.target;
@@ -333,6 +344,7 @@ export async function executeTool(
   if (name === "skill_view") {
     const skillName = typeof args.name === "string" ? args.name.trim() : "";
     if (!skillName) return { ok: false, error: "skill_view requires name." };
+    if (skillName === "itinerary-day" && context.sessionId) fileSessionAsTrip(context.sessionId);
     const rel = typeof args.path === "string" ? args.path : undefined;
     return readSkillFile(skillName, rel);
   }
@@ -362,33 +374,32 @@ export async function executeTool(
     const prompt = typeof args.prompt === "string" ? args.prompt.trim() : "";
     if (!prompt) return { ok: false, error: "image_generate requires a prompt." };
     const size = typeof args.size === "string" && args.size.trim() ? args.size.trim() : "auto";
-    const n = typeof args.n === "number" ? args.n : 1;
+    const n = typeof args.n === "number" && Number.isInteger(args.n) ? args.n : 1;
+    if (!validSize(size)) return { ok: false, error: "Choose a supported image size (dimensions must be multiples of 16)." };
+    if (n < 1 || n > 10) return { ok: false, error: "Batch amount must be between 1 and 10." };
     try {
-      const result = await generateImages({
-        prompt,
-        size,
-        count: n,
+      const target = resolveImageTarget({
         endpointId: typeof args.endpointId === "string" ? args.endpointId : undefined,
         model: typeof args.model === "string" ? args.model : undefined,
-        sessionId: context.sessionId,
-        toolCallId: context.toolCallId,
       });
+      const keyNote = target.apiKeySet
+        ? "The saved Image Studio key is sent only after you confirm."
+        : "This endpoint has no saved key. Confirm only if the service does not need one.";
       return {
         ok: true,
-        message: `Generated ${result.images.length} image${result.images.length === 1 ? "" : "s"} with ${result.endpointName}. Saved to the backend image log.`,
-        images: result.images.map((image) => ({
-          id: image.id,
-          url: image.url,
-          prompt: image.revisedPrompt || image.prompt,
-          size: image.size,
-          model: image.model,
-          createdAt: image.createdAt,
-        })),
+        needsConfirm: true,
+        text: `Confirm to generate with ${target.endpointName} · ${target.model}. ${keyNote}`,
+        prompt,
+        size,
+        n,
+        endpointId: target.endpointId,
+        endpointName: target.endpointName,
+        model: target.model,
       };
     } catch (error) {
       return {
         ok: false,
-        error: error instanceof ImageRequestError || error instanceof Error ? error.message : "Image generation failed.",
+        error: error instanceof ImageSettingsError || error instanceof Error ? error.message : "Image generation failed.",
       };
     }
   }
