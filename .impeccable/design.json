@@ -1,0 +1,410 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-26T10:20:00.000Z",
+  "title": "Design System: Meridian",
+  "extensions": {
+    "colorMeta": {
+      "burnished-copper": {
+        "role": "primary",
+        "displayName": "Burnished Copper",
+        "canonical": "oklch(0.78 0.12 65)",
+        "tonalRamp": ["oklch(0.18 0.04 65)", "oklch(0.30 0.08 65)", "oklch(0.42 0.11 65)", "oklch(0.54 0.12 65)", "oklch(0.66 0.12 65)", "oklch(0.78 0.12 65)", "oklch(0.88 0.07 65)", "oklch(0.95 0.03 65)"]
+      },
+      "copper-pressed": {
+        "role": "primary",
+        "displayName": "Burnished Copper, pressed",
+        "canonical": "oklch(0.47 0.11 50)",
+        "tonalRamp": ["oklch(0.18 0.04 50)", "oklch(0.30 0.07 50)", "oklch(0.40 0.10 50)", "oklch(0.47 0.11 50)", "oklch(0.58 0.11 50)", "oklch(0.70 0.09 50)", "oklch(0.84 0.05 50)", "oklch(0.95 0.025 50)"]
+      },
+      "copper-mark": {
+        "role": "primary",
+        "displayName": "Burnished Copper, mark",
+        "canonical": "oklch(0.52 0.12 50)",
+        "tonalRamp": ["oklch(0.18 0.04 50)", "oklch(0.32 0.08 50)", "oklch(0.42 0.11 50)", "oklch(0.52 0.12 50)", "oklch(0.64 0.11 50)", "oklch(0.76 0.08 50)", "oklch(0.86 0.05 50)", "oklch(0.95 0.025 50)"]
+      },
+      "ink-on-copper": {
+        "role": "primary",
+        "displayName": "Ink on Copper",
+        "canonical": "oklch(0.2 0.02 60)",
+        "tonalRamp": ["oklch(0.15 0.01 60)", "oklch(0.20 0.02 60)", "oklch(0.32 0.02 60)", "oklch(0.45 0.018 60)", "oklch(0.58 0.015 65)", "oklch(0.72 0.012 70)", "oklch(0.86 0.01 80)", "oklch(0.95 0.008 85)"]
+      },
+      "paper-on-copper": {
+        "role": "primary",
+        "displayName": "Paper on Copper",
+        "canonical": "oklch(0.98 0.01 90)",
+        "tonalRamp": ["oklch(0.22 0.015 80)", "oklch(0.35 0.015 82)", "oklch(0.48 0.014 84)", "oklch(0.62 0.012 86)", "oklch(0.75 0.012 88)", "oklch(0.86 0.01 90)", "oklch(0.93 0.01 90)", "oklch(0.98 0.01 90)"]
+      },
+      "ring-day": {
+        "role": "primary",
+        "displayName": "Ring Day",
+        "canonical": "oklch(0.58 0.12 55)",
+        "tonalRamp": ["oklch(0.18 0.04 55)", "oklch(0.30 0.08 55)", "oklch(0.42 0.11 55)", "oklch(0.58 0.12 55)", "oklch(0.70 0.10 55)", "oklch(0.80 0.07 55)", "oklch(0.88 0.04 55)", "oklch(0.95 0.02 55)"]
+      },
+      "field-sage": {
+        "role": "secondary",
+        "displayName": "Field Sage",
+        "canonical": "oklch(0.75 0.07 160)",
+        "tonalRamp": ["oklch(0.18 0.025 160)", "oklch(0.30 0.045 160)", "oklch(0.42 0.06 160)", "oklch(0.54 0.07 160)", "oklch(0.66 0.07 160)", "oklch(0.75 0.07 160)", "oklch(0.86 0.04 160)", "oklch(0.95 0.02 160)"]
+      },
+      "field-sage-ink": {
+        "role": "secondary",
+        "displayName": "Field Sage, on paper",
+        "canonical": "oklch(0.42 0.07 160)",
+        "tonalRamp": ["oklch(0.18 0.03 160)", "oklch(0.28 0.05 160)", "oklch(0.36 0.065 160)", "oklch(0.42 0.07 160)", "oklch(0.55 0.07 160)", "oklch(0.68 0.055 160)", "oklch(0.82 0.035 160)", "oklch(0.94 0.018 160)"]
+      },
+      "night-study": {
+        "role": "neutral",
+        "displayName": "Night Study",
+        "canonical": "oklch(0.18 0.012 70)",
+        "tonalRamp": ["oklch(0.14 0.008 70)", "oklch(0.18 0.012 70)", "oklch(0.28 0.014 70)", "oklch(0.40 0.014 72)", "oklch(0.55 0.012 78)", "oklch(0.70 0.012 82)", "oklch(0.85 0.01 85)", "oklch(0.95 0.008 85)"]
+      },
+      "warm-paper": {
+        "role": "neutral",
+        "displayName": "Warm Paper",
+        "canonical": "oklch(0.965 0.012 85)",
+        "tonalRamp": ["oklch(0.22 0.012 80)", "oklch(0.35 0.012 82)", "oklch(0.48 0.012 83)", "oklch(0.62 0.012 84)", "oklch(0.75 0.012 85)", "oklch(0.86 0.012 85)", "oklch(0.93 0.012 85)", "oklch(0.965 0.012 85)"]
+      },
+      "lamp-ink": {
+        "role": "neutral",
+        "displayName": "Lamp Ink",
+        "canonical": "oklch(0.95 0.015 85)",
+        "tonalRamp": ["oklch(0.18 0.012 70)", "oklch(0.30 0.014 72)", "oklch(0.42 0.014 75)", "oklch(0.55 0.014 78)", "oklch(0.68 0.014 82)", "oklch(0.80 0.014 84)", "oklch(0.90 0.014 85)", "oklch(0.95 0.015 85)"]
+      },
+      "walnut-ink": {
+        "role": "neutral",
+        "displayName": "Walnut Ink",
+        "canonical": "oklch(0.25 0.02 60)",
+        "tonalRamp": ["oklch(0.16 0.012 60)", "oklch(0.25 0.02 60)", "oklch(0.36 0.02 62)", "oklch(0.48 0.018 65)", "oklch(0.62 0.015 70)", "oklch(0.75 0.012 78)", "oklch(0.88 0.01 84)", "oklch(0.96 0.008 88)"]
+      },
+      "raised-night": {
+        "role": "neutral",
+        "displayName": "Raised Night",
+        "canonical": "oklch(0.22 0.014 68)",
+        "tonalRamp": ["oklch(0.14 0.008 68)", "oklch(0.18 0.012 68)", "oklch(0.22 0.014 68)", "oklch(0.34 0.014 70)", "oklch(0.48 0.012 74)", "oklch(0.64 0.012 80)", "oklch(0.82 0.01 84)", "oklch(0.94 0.008 86)"]
+      },
+      "card-paper": {
+        "role": "neutral",
+        "displayName": "Card Paper",
+        "canonical": "oklch(0.985 0.008 90)",
+        "tonalRamp": ["oklch(0.24 0.012 80)", "oklch(0.38 0.012 82)", "oklch(0.52 0.01 84)", "oklch(0.66 0.01 86)", "oklch(0.78 0.009 88)", "oklch(0.88 0.008 90)", "oklch(0.94 0.008 90)", "oklch(0.985 0.008 90)"]
+      },
+      "drawer": {
+        "role": "neutral",
+        "displayName": "Drawer",
+        "canonical": "oklch(0.16 0.01 68)",
+        "tonalRamp": ["oklch(0.12 0.006 68)", "oklch(0.16 0.01 68)", "oklch(0.26 0.014 68)", "oklch(0.38 0.014 70)", "oklch(0.52 0.012 74)", "oklch(0.68 0.012 80)", "oklch(0.84 0.01 84)", "oklch(0.95 0.008 86)"]
+      },
+      "drawer-paper": {
+        "role": "neutral",
+        "displayName": "Drawer Paper",
+        "canonical": "oklch(0.955 0.012 85)",
+        "tonalRamp": ["oklch(0.22 0.012 78)", "oklch(0.36 0.012 80)", "oklch(0.50 0.012 82)", "oklch(0.64 0.012 83)", "oklch(0.76 0.012 84)", "oklch(0.86 0.012 85)", "oklch(0.92 0.012 85)", "oklch(0.955 0.012 85)"]
+      },
+      "drawer-active": {
+        "role": "neutral",
+        "displayName": "Drawer Active",
+        "canonical": "oklch(0.26 0.014 68)",
+        "tonalRamp": ["oklch(0.14 0.008 68)", "oklch(0.20 0.012 68)", "oklch(0.26 0.014 68)", "oklch(0.38 0.014 70)", "oklch(0.52 0.012 74)", "oklch(0.66 0.012 80)", "oklch(0.82 0.01 84)", "oklch(0.94 0.008 86)"]
+      },
+      "note": {
+        "role": "neutral",
+        "displayName": "Note",
+        "canonical": "oklch(0.28 0.014 68)",
+        "tonalRamp": ["oklch(0.15 0.008 68)", "oklch(0.22 0.012 68)", "oklch(0.28 0.014 68)", "oklch(0.40 0.014 70)", "oklch(0.54 0.012 74)", "oklch(0.68 0.012 80)", "oklch(0.84 0.01 84)", "oklch(0.95 0.008 86)"]
+      },
+      "note-paper": {
+        "role": "neutral",
+        "displayName": "Note Paper",
+        "canonical": "oklch(0.93 0.015 85)",
+        "tonalRamp": ["oklch(0.24 0.014 78)", "oklch(0.38 0.014 80)", "oklch(0.52 0.014 82)", "oklch(0.66 0.014 83)", "oklch(0.78 0.014 84)", "oklch(0.86 0.014 85)", "oklch(0.93 0.015 85)", "oklch(0.97 0.012 86)"]
+      },
+      "muted-night": {
+        "role": "neutral",
+        "displayName": "Muted Night",
+        "canonical": "oklch(0.27 0.012 68)",
+        "tonalRamp": ["oklch(0.15 0.008 68)", "oklch(0.21 0.01 68)", "oklch(0.27 0.012 68)", "oklch(0.40 0.012 70)", "oklch(0.54 0.012 74)", "oklch(0.68 0.012 80)", "oklch(0.84 0.01 84)", "oklch(0.95 0.008 86)"]
+      },
+      "quiet": {
+        "role": "neutral",
+        "displayName": "Quiet",
+        "canonical": "oklch(0.74 0.02 80)",
+        "tonalRamp": ["oklch(0.20 0.012 70)", "oklch(0.32 0.014 72)", "oklch(0.44 0.016 74)", "oklch(0.56 0.018 76)", "oklch(0.66 0.02 78)", "oklch(0.74 0.02 80)", "oklch(0.86 0.014 82)", "oklch(0.95 0.008 85)"]
+      },
+      "quiet-day": {
+        "role": "neutral",
+        "displayName": "Quiet Day",
+        "canonical": "oklch(0.48 0.02 65)",
+        "tonalRamp": ["oklch(0.18 0.012 62)", "oklch(0.28 0.016 63)", "oklch(0.38 0.018 64)", "oklch(0.48 0.02 65)", "oklch(0.60 0.018 70)", "oklch(0.72 0.014 76)", "oklch(0.86 0.01 82)", "oklch(0.95 0.008 86)"]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "oklch(0.4 0.02 70 / 55%)",
+        "tonalRamp": ["oklch(0.18 0.012 68)", "oklch(0.26 0.016 69)", "oklch(0.34 0.018 70)", "oklch(0.40 0.02 70)", "oklch(0.52 0.018 74)", "oklch(0.66 0.014 78)", "oklch(0.82 0.01 82)", "oklch(0.94 0.008 85)"]
+      },
+      "hairline-day": {
+        "role": "neutral",
+        "displayName": "Hairline Day",
+        "canonical": "oklch(0.86 0.02 80)",
+        "tonalRamp": ["oklch(0.24 0.014 74)", "oklch(0.36 0.016 76)", "oklch(0.48 0.018 77)", "oklch(0.60 0.018 78)", "oklch(0.72 0.02 79)", "oklch(0.86 0.02 80)", "oklch(0.92 0.014 82)", "oklch(0.97 0.008 85)"]
+      },
+      "input-fill": {
+        "role": "neutral",
+        "displayName": "Input Fill",
+        "canonical": "oklch(0.42 0.02 70 / 45%)",
+        "tonalRamp": ["oklch(0.18 0.012 68)", "oklch(0.28 0.016 69)", "oklch(0.36 0.018 70)", "oklch(0.42 0.02 70)", "oklch(0.55 0.018 74)", "oklch(0.68 0.014 78)", "oklch(0.84 0.01 82)", "oklch(0.95 0.008 85)"]
+      },
+      "wash": {
+        "role": "neutral",
+        "displayName": "Accent Wash",
+        "canonical": "oklch(0.32 0.02 70)",
+        "tonalRamp": ["oklch(0.16 0.01 68)", "oklch(0.24 0.016 69)", "oklch(0.32 0.02 70)", "oklch(0.44 0.018 72)", "oklch(0.56 0.016 76)", "oklch(0.70 0.014 80)", "oklch(0.84 0.01 84)", "oklch(0.95 0.008 86)"]
+      },
+      "alarm": {
+        "role": "destructive",
+        "displayName": "Alarm Red",
+        "canonical": "oklch(0.7 0.14 28)",
+        "tonalRamp": ["oklch(0.22 0.05 28)", "oklch(0.32 0.09 28)", "oklch(0.44 0.13 28)", "oklch(0.55 0.15 28)", "oklch(0.70 0.14 28)", "oklch(0.80 0.10 28)", "oklch(0.88 0.06 28)", "oklch(0.95 0.03 28)"]
+      },
+      "alarm-day": {
+        "role": "destructive",
+        "displayName": "Alarm Red, on paper",
+        "canonical": "oklch(0.5 0.16 30)",
+        "tonalRamp": ["oklch(0.20 0.06 30)", "oklch(0.32 0.11 30)", "oklch(0.42 0.15 30)", "oklch(0.50 0.16 30)", "oklch(0.62 0.14 30)", "oklch(0.74 0.10 30)", "oklch(0.86 0.06 30)", "oklch(0.95 0.03 30)"]
+      },
+      "map-destination": {
+        "role": "map",
+        "displayName": "Map Destination",
+        "canonical": "#c47a3a",
+        "tonalRamp": ["oklch(0.22 0.04 55)", "oklch(0.32 0.08 55)", "oklch(0.44 0.11 55)", "oklch(0.55 0.12 55)", "oklch(0.67 0.12 55)", "oklch(0.78 0.10 55)", "oklch(0.88 0.06 55)", "oklch(0.95 0.03 55)"]
+      },
+      "map-stay": {
+        "role": "map",
+        "displayName": "Map Stay",
+        "canonical": "#6a8f72",
+        "tonalRamp": ["oklch(0.20 0.02 155)", "oklch(0.32 0.035 155)", "oklch(0.44 0.045 155)", "oklch(0.54 0.05 155)", "oklch(0.62 0.05 155)", "oklch(0.74 0.04 155)", "oklch(0.86 0.025 155)", "oklch(0.95 0.015 155)"]
+      },
+      "map-poi": {
+        "role": "map",
+        "displayName": "Map Place",
+        "canonical": "#8d7355",
+        "tonalRamp": ["oklch(0.22 0.02 70)", "oklch(0.32 0.035 70)", "oklch(0.44 0.045 68)", "oklch(0.52 0.05 66)", "oklch(0.58 0.05 65)", "oklch(0.70 0.04 68)", "oklch(0.84 0.025 72)", "oklch(0.94 0.015 75)"]
+      },
+      "map-transit": {
+        "role": "map",
+        "displayName": "Map Transit",
+        "canonical": "#9a8f80",
+        "tonalRamp": ["oklch(0.22 0.01 75)", "oklch(0.34 0.015 75)", "oklch(0.46 0.018 75)", "oklch(0.56 0.02 75)", "oklch(0.66 0.02 75)", "oklch(0.78 0.016 78)", "oklch(0.88 0.012 82)", "oklch(0.95 0.008 85)"]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "The empty-chat name only."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Section titles: Desk, Image Studio, Settings, Tools, Map, Fares."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "The open conversation. Dialog titles are the same face at 1rem, medium."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Conversation text. Controls and navigation use 14px medium."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Uppercase kickers and tabs that are not sentences."
+      }
+    },
+    "shadows": [
+      {
+        "name": "slash-menu",
+        "value": "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
+        "purpose": "The menu above the composer. Opaque, bordered, and the only panel shadow."
+      },
+      {
+        "name": "map-pin",
+        "value": "0 0 0 1px rgba(0, 0, 0, 0.3)",
+        "purpose": "Halo on a trip marker, with a 2px white border. Not a surface shadow."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-standard",
+        "value": "cubic-bezier(0.4, 0, 0.2, 1)",
+        "purpose": "Default easing for control color and the 150ms state change."
+      },
+      {
+        "name": "ease-out",
+        "value": "cubic-bezier(0, 0, 0.2, 1)",
+        "purpose": "Desk width, 200ms."
+      },
+      {
+        "name": "dialog",
+        "value": "100ms",
+        "purpose": "Dialog fade and scale."
+      },
+      {
+        "name": "press",
+        "value": "translateY(1px)",
+        "purpose": "A pressed button moves down one pixel. It does not lift."
+      },
+      {
+        "name": "reduced",
+        "value": "0.01ms",
+        "purpose": "When reduced motion is requested, durations collapse and the binary decode is removed."
+      }
+    ],
+    "breakpoints": [
+      { "name": "md", "value": "48rem" },
+      { "name": "xl", "value": "80rem" },
+      { "name": "studio", "value": "760px" },
+      { "name": "travel", "value": "860px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Nameplate",
+      "kind": "custom",
+      "refersTo": "nameplate",
+      "description": "The Fraunces name on the sidebar drawer.",
+      "html": "<p class=\"ds-nameplate\">Meridian</p>",
+      "css": ".ds-nameplate { margin: 0; font-family: var(--font-display-family), Fraunces, Georgia, serif; font-size: 1.65rem; font-weight: 400; line-height: 1; letter-spacing: -0.025em; color: var(--foreground, oklch(0.95 0.015 85)); }"
+    },
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The copper action: new chat, send, start a session.",
+      "html": "<button class=\"ds-btn-primary\" type=\"button\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 12h14\"/><path d=\"M12 5v14\"/></svg>New chat</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 10px; border: 1px solid transparent; border-radius: var(--radius, 0.625rem); background: var(--primary, oklch(0.78 0.12 65)); color: var(--primary-foreground, oklch(0.2 0.02 60)); font-family: var(--font-geist-sans), Geist, ui-sans-serif, system-ui, sans-serif; font-size: 14px; font-weight: 500; line-height: 1; transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1), transform 150ms cubic-bezier(0.4, 0, 0.2, 1); } .ds-btn-primary:hover { background: color-mix(in oklch, var(--primary, oklch(0.78 0.12 65)) 80%, transparent); } .ds-btn-primary:focus-visible { outline: none; border-color: var(--ring, oklch(0.78 0.12 65)); box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring, oklch(0.78 0.12 65)) 50%, transparent); } .ds-btn-primary:active { transform: translateY(1px); } .ds-btn-primary:disabled { opacity: 0.5; }"
+    },
+    {
+      "name": "Destructive Button",
+      "kind": "button",
+      "refersTo": "button-destructive",
+      "description": "Alarm text on a wash. For a failed or destructive action.",
+      "html": "<button class=\"ds-btn-destructive\" type=\"button\">Delete</button>",
+      "css": ".ds-btn-destructive { display: inline-flex; align-items: center; justify-content: center; height: 32px; padding: 0 10px; border: 1px solid transparent; border-radius: var(--radius, 0.625rem); background: color-mix(in oklch, var(--destructive, oklch(0.7 0.14 28)) 20%, transparent); color: var(--destructive, oklch(0.7 0.14 28)); font-family: var(--font-geist-sans), Geist, ui-sans-serif, system-ui, sans-serif; font-size: 14px; font-weight: 500; line-height: 1; transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1), transform 150ms cubic-bezier(0.4, 0, 0.2, 1); } .ds-btn-destructive:hover { background: color-mix(in oklch, var(--destructive, oklch(0.7 0.14 28)) 30%, transparent); } .ds-btn-destructive:focus-visible { outline: none; border-color: color-mix(in oklch, var(--destructive, oklch(0.7 0.14 28)) 50%, transparent); box-shadow: 0 0 0 3px color-mix(in oklch, var(--destructive, oklch(0.7 0.14 28)) 40%, transparent); } .ds-btn-destructive:active { transform: translateY(1px); } .ds-btn-destructive:disabled { opacity: 0.5; }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Search, settings, and short fields. 32px, hairline, copper ring on focus.",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"Search chats\" aria-label=\"Search chats\" />",
+      "css": ".ds-input { display: block; width: 240px; height: 32px; padding: 4px 10px; border: 1px solid var(--input, oklch(0.42 0.02 70 / 45%)); border-radius: var(--radius, 0.625rem); background: color-mix(in oklch, var(--input, oklch(0.42 0.02 70 / 45%)) 30%, transparent); color: var(--foreground, oklch(0.95 0.015 85)); font-family: var(--font-geist-sans), Geist, ui-sans-serif, system-ui, sans-serif; font-size: 14px; transition: border-color 150ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 150ms cubic-bezier(0.4, 0, 0.2, 1); } .ds-input::placeholder { color: var(--muted-foreground, oklch(0.74 0.02 80)); } .ds-input:focus-visible { outline: none; border-color: var(--ring, oklch(0.78 0.12 65)); box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring, oklch(0.78 0.12 65)) 50%, transparent); } .ds-input:disabled { opacity: 0.5; }"
+    },
+    {
+      "name": "Composer",
+      "kind": "custom",
+      "refersTo": "composer",
+      "description": "The message field: an 18px card, the mode switch, and Send.",
+      "html": "<form class=\"ds-composer\"><div class=\"ds-composer-field\"><textarea class=\"ds-composer-input\" rows=\"2\" placeholder=\"Message Meridian. Type / for modes, skills, and tools.\" aria-label=\"Message Meridian\"></textarea><div class=\"ds-composer-bar\"><div class=\"ds-modes\" role=\"group\" aria-label=\"Chat mode\"><button class=\"ds-mode\" type=\"button\" aria-pressed=\"true\">Agent</button><button class=\"ds-mode\" type=\"button\" aria-pressed=\"false\">Ask</button><button class=\"ds-mode\" type=\"button\" aria-pressed=\"false\">Plan</button></div><span class=\"ds-composer-hint\">Enter to send</span><button class=\"ds-send\" type=\"submit\">Send</button></div></div></form>",
+      "css": ".ds-composer { width: 100%; max-width: 40rem; padding: 12px 0 0; border-top: 1px solid var(--border, oklch(0.4 0.02 70 / 55%)); background: color-mix(in oklch, var(--background, oklch(0.18 0.012 70)) 90%, transparent); } .ds-composer-field { border: 1px solid var(--border, oklch(0.4 0.02 70 / 55%)); border-radius: calc(var(--radius, 0.625rem) * 1.8); background: var(--card, oklch(0.22 0.014 68)); padding: 8px; } .ds-composer-input { display: block; width: 100%; min-height: 64px; padding: 8px; border: 0; border-radius: var(--radius, 0.625rem); background: transparent; color: var(--foreground, oklch(0.95 0.015 85)); font-family: var(--font-geist-sans), Geist, ui-sans-serif, system-ui, sans-serif; font-size: 15px; line-height: 1.75rem; resize: none; } .ds-composer-input::placeholder { color: var(--muted-foreground, oklch(0.74 0.02 80)); } .ds-composer-input:focus-visible { outline: none; } .ds-composer-bar { display: flex; align-items: center; gap: 8px; padding: 4px; } .ds-modes { display: flex; gap: 2px; } .ds-mode { height: 24px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: var(--foreground, oklch(0.95 0.015 85)); font-family: var(--font-geist-sans), Geist, ui-sans-serif, system-ui, sans-serif; font-size: 12px; font-weight: 500; } .ds-mode:hover { background: color-mix(in oklch, var(--muted, oklch(0.27 0.012 68)) 50%, transparent); } .ds-mode[aria-pressed='true'] { background: var(--secondary, oklch(0.28 0.014 68)); color: var(--secondary-foreground, oklch(0.95 0.015 85)); } .ds-mode:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring, oklch(0.78 0.12 65)) 50%, transparent); } .ds-composer-hint { flex: 1; min-width: 0; color: var(--muted-foreground, oklch(0.74 0.02 80)); font-family: var(--font-geist-sans), Geist, ui-sans-serif, system-ui, sans-serif; font-size: 12px; } .ds-send { display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border: 1px solid transparent; border-radius: var(--radius, 0.625rem); background: var(--primary, oklch(0.78 0.12 65)); color: var(--primary-foreground, oklch(0.2 0.02 60)); font-family: var(--font-geist-sans), Geist, ui-sans-serif, system-ui, sans-serif; font-size: 13px; font-weight: 500; transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1), transform 150ms cubic-bezier(0.4, 0, 0.2, 1); } .ds-send:hover { background: color-mix(in oklch, var(--primary, oklch(0.78 0.12 65)) 80%, transparent); } .ds-send:focus-visible { outline: none; border-color: var(--ring, oklch(0.78 0.12 65)); box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring, oklch(0.78 0.12 65)) 50%, transparent); } .ds-send:active { transform: translateY(1px); }"
+    },
+    {
+      "name": "Studio Nav",
+      "kind": "nav",
+      "refersTo": "nav-item",
+      "description": "A sidebar destination. Copper icon, drawer-active when current.",
+      "html": "<a class=\"ds-nav\" href=\"#images\" aria-current=\"page\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"/><circle cx=\"9\" cy=\"9\" r=\"2\"/><path d=\"m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\"/></svg>Image Studio</a>",
+      "css": ".ds-nav { display: inline-flex; align-items: center; gap: 8px; width: 240px; padding: 8px; border-radius: var(--radius, 0.625rem); color: var(--sidebar-foreground, oklch(0.95 0.015 85)); font-family: var(--font-geist-sans), Geist, ui-sans-serif, system-ui, sans-serif; font-size: 14px; text-decoration: none; } .ds-nav svg { color: var(--copper, oklch(0.78 0.12 65)); } .ds-nav:hover { background: color-mix(in oklch, var(--sidebar-accent, oklch(0.26 0.014 68)) 60%, transparent); } .ds-nav[aria-current='page'] { background: var(--sidebar-accent, oklch(0.26 0.014 68)); color: var(--sidebar-accent-foreground, oklch(0.95 0.015 85)); } .ds-nav:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring, oklch(0.78 0.12 65)) 50%, transparent); }"
+    },
+    {
+      "name": "Your Message",
+      "kind": "custom",
+      "refersTo": "user-bubble",
+      "description": "The note you send: 18px corners, Note fill, 15px type.",
+      "html": "<div class=\"ds-bubble\">Tell it something it should still know next time.</div>",
+      "css": ".ds-bubble { max-width: 40rem; padding: 12px 16px; border-radius: calc(var(--radius, 0.625rem) * 1.8); background: var(--secondary, oklch(0.28 0.014 68)); color: var(--secondary-foreground, oklch(0.95 0.015 85)); font-family: var(--font-geist-sans), Geist, ui-sans-serif, system-ui, sans-serif; font-size: 15px; line-height: 1.75rem; }"
+    },
+    {
+      "name": "Sidebar Tabs",
+      "kind": "chip",
+      "refersTo": "sidebar-tab",
+      "description": "Chats and Projects. Uppercase, tracked, copper underline when selected.",
+      "html": "<div class=\"ds-tabs\" role=\"tablist\" aria-label=\"Sidebar\"><button class=\"ds-tab\" type=\"button\" role=\"tab\" aria-selected=\"true\">Chats</button><button class=\"ds-tab\" type=\"button\" role=\"tab\" aria-selected=\"false\">Projects</button></div>",
+      "css": ".ds-tabs { display: flex; gap: 12px; } .ds-tab { padding: 0 0 2px; border: 0; border-bottom: 1px solid transparent; background: transparent; color: var(--muted-foreground, oklch(0.74 0.02 80)); font-family: var(--font-geist-sans), Geist, ui-sans-serif, system-ui, sans-serif; font-size: 11px; font-weight: 400; letter-spacing: 0.14em; text-transform: uppercase; } .ds-tab:hover { color: var(--foreground, oklch(0.95 0.015 85)); } .ds-tab[aria-selected='true'] { border-bottom-color: var(--copper, oklch(0.78 0.12 65)); color: var(--foreground, oklch(0.95 0.015 85)); } .ds-tab:focus-visible { outline: 2px solid var(--ring, oklch(0.78 0.12 65)); outline-offset: 2px; }"
+    },
+    {
+      "name": "Live Status",
+      "kind": "chip",
+      "refersTo": "status-chip",
+      "description": "Field Sage for a live or confirmed fact. Idle stays muted.",
+      "html": "<span class=\"ds-status\">Live</span>",
+      "css": ".ds-status { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 9999px; background: color-mix(in oklch, var(--sage, oklch(0.75 0.07 160)) 15%, transparent); color: var(--sage, oklch(0.75 0.07 160)); font-family: var(--font-geist-sans), Geist, ui-sans-serif, system-ui, sans-serif; font-size: 10px; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Warm Desk",
+    "overview": "Meridian is a private desk for one person and the model they already run. Night Study is the ground the app boots into, warm and dark. Warm Paper is the same desk with the lamp on. Fraunces is the nameplate. Geist is the work. The mood is quiet and warm, and a pop of color is welcome when it is Burnished Copper or Field Sage.\n\nDepth is a step of tone. The drawer sits a shade under the canvas, a card sits a shade above it, and a hairline finishes the edge. Controls are short, gently curved, and they press down one pixel. Copper marks the action: buttons, icons, the active underline, links, selection, and the context meter. Sage marks what is reachable, live, or confirmed.\n\nThe desk refuses a hosted-product look. No purple brand, no neon, and no frosted panels. The composer dock and the dialog scrim are the only translucency, and both stay faint. The map's four colors stay on the map.",
+    "keyCharacteristics": [
+      "Night Study by default, Warm Paper as the same desk with the lamp on",
+      "Fraunces for the name and section titles, Geist for the work, Geist Mono for tools and measures",
+      "Two pops of color: Burnished Copper for action and marks, Field Sage for live or confirmed",
+      "Tonal steps and hairlines, with shadow reserved for the slash menu and map pins",
+      "Compact controls: 32px buttons, 10px corners, and a 1px press"
+    ],
+    "rules": [
+      {
+        "name": "The Two Voices Rule",
+        "body": "Burnished Copper is the action and the mark. Field Sage is live, reachable, or confirmed. A pop of either is welcome. A third accent is not, and neither voice becomes a gradient or a glow.",
+        "section": "colors"
+      },
+      {
+        "name": "The Map Legend Rule",
+        "body": "Destination, stay, place, and transit colors exist only on the trip map and its key. They do not move into buttons, links, or chrome.",
+        "section": "colors"
+      },
+      {
+        "name": "The Nameplate Rule",
+        "body": "Fraunces is for the product name and section titles. Sentences, controls, and lists are Geist. Tool names, file names, commands, and the context meter are Geist Mono.",
+        "section": "typography"
+      },
+      {
+        "name": "The Label Rule",
+        "body": "A label that is not a sentence is 11px, uppercase, and tracked out 0.14em.",
+        "section": "typography"
+      },
+      {
+        "name": "The Frame Rule",
+        "body": "The sidebar is 18.5rem, the desk is 24rem, and the conversation stops at 48rem. Under 48rem the sidebar covers the work. Under 80rem the desk covers the work.",
+        "section": "layout"
+      },
+      {
+        "name": "The Tonal Step Rule",
+        "body": "A surface changes depth by stepping to the next warm tone and drawing a hairline. It does not lift off the desk.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Floating Menu Rule",
+        "body": "The slash menu is the one panel that casts a shadow. Map pins are the one mark with a halo.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Three Corners Rule",
+        "body": "10px for controls, 14px for panels and dialogs, 18px for the composer and your own messages. Pills are for chips and status.",
+        "section": "shapes"
+      }
+    ],
+    "dos": [
+      "Do boot in Night Study. Warm Paper is the same desk with the lamp on.",
+      "Do use Burnished Copper for primary buttons, mark icons, the active underline, links, text selection, and the context meter.",
+      "Do use Field Sage for reachable, live, and confirmed.",
+      "Do keep conversation text at 15px on a 28px line, inside a column that stops at 48rem.",
+      "Do draw focus as a 3px ring at half the ring color, and move a pressed button down 1px.",
+      "Do leave motion short, and remove it when the person asks for reduced motion."
+    ],
+    "donts": [
+      "Don't use purple, neon, or frosted glass on panels, cards, or menus.",
+      "Don't add a third accent. The map legend stays on the map.",
+      "Don't put drop shadows on cards, the sidebar, the desk, or dialogs.",
+      "Don't set Fraunces on buttons, inputs, labels, or body copy.",
+      "Don't grow controls, round them into pills, or lift them on hover."
+    ]
+  }
+}

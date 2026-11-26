@@ -46,7 +46,7 @@ next-env.d.ts
 
 # local coding-agent tooling
 .workbuddy-ai/
-.impeccable/
+.impeccable/live/
 .impeccable.md
 /AGENTS.md
 
