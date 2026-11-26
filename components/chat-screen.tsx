@@ -1,7 +1,6 @@
 "use client";
 
 import { Download, PanelRight } from "lucide-react";
-import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 
@@ -66,13 +65,10 @@ export function ChatScreen({
   embedded = false,
   embeddedSessionId,
   headerPortal = null,
-  companion = false,
 }: {
   embedded?: boolean;
   embeddedSessionId?: string | null;
   headerPortal?: HTMLElement | null;
-  /** Chat column kept beside Image Studio or Travel Planner. */
-  companion?: boolean;
 } = {}) {
   const openSidebar = useOpenSidebar();
   const {
@@ -693,7 +689,7 @@ export function ChatScreen({
       </Button>
     </div>
   ) : null;
-  const endpointControls = companion ? null : (
+  const endpointControls = (
     <>
       {(settings?.endpoints.length ?? 0) > 1 ? (
         <label className="flex items-center gap-1.5">
@@ -772,13 +768,7 @@ export function ChatScreen({
           headerPortal,
         ) : (
           <header className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2 md:px-4">
-            {embedded ? null : companion ? (
-              <Link href="/" className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
-                All chats
-              </Link>
-            ) : (
-              <SidebarToggle onOpen={openSidebar} />
-            )}
+            {embedded ? null : <SidebarToggle onOpen={openSidebar} />}
             <div className="min-w-0 flex-1">
               <p className="truncate font-display text-xl leading-none">
                 {embedded ? "Trip conversation" : headerTitle}
@@ -795,7 +785,7 @@ export function ChatScreen({
               </div>
             </div>
             {cleanControls}
-            {threadDetail && !embedded && !companion ? (
+            {threadDetail && !embedded ? (
               <div className="flex items-center gap-1">
                 <Button type="button" variant="ghost" size="icon-sm" aria-label="Export markdown" onClick={() => void download("md", headerTitle)}>
                   <Download />
@@ -806,7 +796,7 @@ export function ChatScreen({
               </div>
             ) : null}
             {endpointControls}
-            {!embedded && !companion ? (
+            {!embedded ? (
               <Button
                 type="button"
                 variant="ghost"
@@ -898,7 +888,7 @@ export function ChatScreen({
           tools={toolCatalog}
         />
       </section>
-      {!embedded && !companion ? (
+      {!embedded ? (
         <Inspector
           open={inspectorOpen}
           collapsed={deskCollapsed}
@@ -911,7 +901,7 @@ export function ChatScreen({
           }}
         />
       ) : null}
-      {!embedded && !companion && inspectorOpen ? (
+      {!embedded && inspectorOpen ? (
         <button
           type="button"
           aria-label="Close skills and memory"
