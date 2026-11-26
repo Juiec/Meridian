@@ -3,9 +3,10 @@
 import { Archive, ChevronRight, Compass, Folder, FolderInput, ImageIcon, Menu, Pencil, Plus, Settings, Star, Trash2, Upload, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { useAppState } from "@/components/app-state";
+import { runningSessionKey, subscribeRunning } from "@/components/live-flight";
 import { readJson } from "@/components/client-api";
 import { ProjectFiles } from "@/components/project-files";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -62,6 +63,8 @@ export function Sidebar({
   const [travelSessions, setTravelSessions] = useState<SessionSummary[]>([]);
   const [travelOpen, setTravelOpen] = useState(true);
   const importRef = useRef<HTMLInputElement>(null);
+  const runningKey = useSyncExternalStore(subscribeRunning, runningSessionKey, () => "");
+  const stillThinking = (id: string) => runningKey.split("\n").includes(id);
 
   async function startNew() {
     setBusy(true);
@@ -489,10 +492,16 @@ export function Sidebar({
                         aria-current={active ? "page" : undefined}
                         className="min-w-0 flex-1 px-2 py-2 text-left"
                       >
-                        <span className="block truncate text-sm">
-                          {session.pinned ? "★ " : ""}
-                          {session.title}
-                          {session.archived ? " · archived" : ""}
+                        <span className="flex items-center gap-1.5 truncate text-sm">
+                          {stillThinking(session.id) ? (
+                            <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden />
+                          ) : null}
+                          <span className="truncate">
+                            {session.pinned ? "★ " : ""}
+                            {session.title}
+                            {session.archived ? " · archived" : ""}
+                            {stillThinking(session.id) ? <span className="sr-only">, still thinking</span> : null}
+                          </span>
                         </span>
                         <span className="block text-[11px] text-muted-foreground">
                           {relativeStamp(session.updatedAt, now)}

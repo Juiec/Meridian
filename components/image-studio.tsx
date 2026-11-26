@@ -12,6 +12,9 @@ import { useEffect, useRef, useState, useCallback } from "react";
 
 import { readJson } from "@/components/client-api";
 import { useAppState } from "@/components/app-state";
+import { SidebarToggle } from "@/components/sidebar";
+import { useOpenSidebar } from "@/components/shell-context";
+import { batchFileStamp, batchImageBaseName } from "@/lib/image-names";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -29,6 +32,7 @@ type GeneratedImage = {
   b64_json?: string;
   url?: string;
   revised_prompt?: string;
+  fileName?: string | null;
 };
 
 type StoredImage = {
@@ -49,6 +53,7 @@ async function fetchSavedImages(): Promise<StoredImage[]> {
 }
 
 export function ImageStudio() {
+  const openSidebar = useOpenSidebar();
   const { settings } = useAppState();
   const fileInput = useRef<HTMLInputElement>(null);
   const previewUrl = useRef<string | null>(null);
@@ -65,6 +70,7 @@ export function ImageStudio() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [images, setImages] = useState<GeneratedImage[]>([]);
+  const [batchStamp, setBatchStamp] = useState("");
   const [savedImages, setSavedImages] = useState<StoredImage[]>([]);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -202,6 +208,7 @@ export function ImageStudio() {
       );
       const received = result.data?.filter((image) => image.b64_json || image.url) ?? [];
       if (received.length === 0) throw new Error("OpenAI returned no images.");
+      setBatchStamp(batchFileStamp());
       setImages(received);
       setStatus(`${received.length} image${received.length === 1 ? "" : "s"} ready. Saved to the backend image log.`);
       void loadHistory();
@@ -217,7 +224,8 @@ export function ImageStudio() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex items-center justify-between gap-3 border-b border-border px-4 py-3 md:px-6">
-        <div className="min-w-0">
+        <SidebarToggle onOpen={openSidebar} />
+        <div className="min-w-0 flex-1">
           <p className="font-display text-2xl leading-none">Image Studio</p>
           <p className="mt-1 text-xs text-muted-foreground">Choose a saved endpoint and image model.</p>
         </div>
@@ -423,7 +431,7 @@ export function ImageStudio() {
                       <img src={source} alt={image.revised_prompt || `Generated image ${index + 1}`} className="aspect-square w-full object-contain" />
                       <a
                         href={source}
-                        download={`meridian-image-${index + 1}.png`}
+                        download={image.fileName || `${batchImageBaseName(batchStamp || batchFileStamp(), index)}.png`}
                         className="absolute right-2 bottom-2 inline-flex size-9 items-center justify-center rounded-lg border border-white/20 bg-black/70 text-white opacity-100 backdrop-blur transition-opacity sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100"
                         aria-label={`Download image ${index + 1}`}
                       >

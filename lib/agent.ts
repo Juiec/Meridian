@@ -27,6 +27,7 @@ import {
 } from "@/lib/sessions";
 import { prepareAgentTools, executeAgentTool } from "@/lib/agent-tools";
 import { runSubagent } from "@/lib/subagent";
+import { resolveTurnCalls } from "@/lib/text-tool-calls";
 import { TOOLS } from "@/lib/tools";
 import type { ToolRoute } from "@/lib/tool-registry";
 import type { AgentEvent, Attachment, ToolCallRecord } from "@/lib/types";
@@ -579,7 +580,9 @@ export async function runTurn(input: {
       return;
     }
 
-    const toolCalls = forceText ? [] : finishedCalls(acc, pass);
+    const resolved = resolveTurnCalls(text, forceText ? [] : finishedCalls(acc, pass), pass, !forceText);
+    text = resolved.prose;
+    const toolCalls = resolved.calls;
     if (text.trim() || reasoning.trim() || toolCalls.length > 0) {
       insertMessage({
         sessionId: input.sessionId,

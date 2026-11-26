@@ -640,29 +640,29 @@ export function ToolsDeskSummary() {
     };
   }, []);
 
-  if (error) return <p className="mt-2 text-xs text-destructive">{error}</p>;
-  if (!catalog) return <p className="mt-2 text-xs text-muted-foreground">Loading tools…</p>;
+  if (error) return <p className="mt-3 text-sm text-destructive">{error}</p>;
+  if (!catalog) return <p className="mt-3 text-sm leading-6 text-muted-foreground">Loading tools…</p>;
   if (catalog.servers.length === 0 && catalog.customTools.length === 0) {
-    return <p className="mt-2 text-xs text-muted-foreground">None registered yet.</p>;
+    return <p className="mt-3 text-sm leading-6 text-muted-foreground">None registered yet.</p>;
   }
   return (
-    <ul className="mt-2 space-y-1.5">
+    <ul className="mt-3 space-y-2">
       {catalog.servers.map((server) => (
-        <li key={server.id} className="flex items-baseline justify-between gap-2 text-xs">
+        <li key={server.id} className="flex items-baseline justify-between gap-3 text-sm leading-6">
           <span className="truncate">{server.name}</span>
-          <span className={cn("shrink-0 tracking-wide uppercase", statusClass(server.status))}>{statusLabel(server.status)}</span>
+          <span className={cn("shrink-0 text-xs tracking-[0.06em] uppercase", statusClass(server.status))}>{statusLabel(server.status)}</span>
         </li>
       ))}
       {catalog.customTools.map((tool) => (
-        <li key={tool.id} className="flex items-baseline justify-between gap-2 text-xs">
+        <li key={tool.id} className="flex items-baseline justify-between gap-3 text-sm leading-6">
           <span className="truncate font-mono text-copper">{tool.name}</span>
-          <span className={cn("shrink-0 tracking-wide uppercase", tool.enabled ? "text-sage" : "text-muted-foreground")}>
+          <span className={cn("shrink-0 text-xs tracking-[0.06em] uppercase", tool.enabled ? "text-sage" : "text-muted-foreground")}>
             {tool.enabled ? "Enabled" : "Disabled"}
           </span>
         </li>
       ))}
       <li>
-        <Link href="/settings#tools" className="text-xs text-copper underline-offset-2 hover:underline">
+        <Link href="/settings#tools" className="text-sm text-copper underline-offset-2 hover:underline">
           Manage tools
         </Link>
       </li>

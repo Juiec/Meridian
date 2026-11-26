@@ -14,6 +14,7 @@ import {
   visibleMessages,
 } from "@/lib/sessions";
 import { getProject } from "@/lib/projects";
+import { resolveTurnCalls } from "@/lib/text-tool-calls";
 import { parseToolArguments, TOOLS, type ToolDefinition } from "@/lib/tools";
 import { workspaceInstructions } from "@/lib/workspace";
 import type { ToolRoute } from "@/lib/tool-registry";
@@ -309,7 +310,9 @@ export async function runSubagent(input: {
         return { ok: false, error: "Stopped before the subagent finished.", title: request.title, sessionId: child.id };
       }
 
-      const toolCalls = forceText ? [] : finishedCalls(acc, pass);
+      const resolved = resolveTurnCalls(text, forceText ? [] : finishedCalls(acc, pass), pass, !forceText);
+      text = resolved.prose;
+      const toolCalls = resolved.calls;
       const spoken = text.trim() || (toolCalls.length === 0 ? reasoning.trim() : "");
       if (spoken || toolCalls.length > 0) {
         insertMessage({

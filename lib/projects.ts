@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync } from "node:fs";
 import path from "node:path";
 
 import { isSecretFilename } from "@/lib/attachments";
@@ -117,6 +117,60 @@ export function addProject(name: string, root: string): ProjectRecord {
   const project: ProjectRecord = { id: randomUUID(), name: projectName, root: real, managed: false };
   save([...projects, project]);
   return project;
+}
+
+export function renameProject(id: string, name: string): ProjectRecord {
+  const projectName = cleanName(name);
+  const projects = readAll();
+  const index = projects.findIndex((item) => item.id === id);
+  if (index < 0) throw new Error("Project not found.");
+  const next = { ...projects[index], name: projectName };
+  const copy = projects.slice();
+  copy[index] = next;
+  save(copy);
+  return next;
+}
+
+function entryName(name: string): string {
+  const clean = name.trim();
+  if (!clean || clean === "." || clean === ".." || /[\\/\u0000]/.test(clean)) {
+    throw new Error("That name is not valid.");
+  }
+  if (clean.length > 255) throw new Error("That name is too long.");
+  if (isSecretFilename(clean)) throw new Error("That name is refused.");
+  return clean;
+}
+
+export function renameProjectEntry(id: string, relativePath: string, nextName: string): ProjectEntry {
+  const clean = entryName(nextName);
+  const located = resolveProjectPath(id, relativePath);
+  if (!located.relative) throw new Error("Give a file or folder inside the project.");
+  if (!existsSync(located.absolute)) throw new Error("That file is missing.");
+  const listed = lstatSync(located.absolute);
+  if (listed.isSymbolicLink()) throw new Error("That path leaves the project.");
+  const real = realpathSync(located.absolute);
+  if (!insideRoot(located.root, real)) throw new Error("That path leaves the project.");
+
+  const parent = path.posix.dirname(located.relative);
+  const nextRelative = parent === "." ? clean : `${parent}/${clean}`;
+  const destination = path.resolve(located.root, nextRelative);
+  if (!insideRoot(located.root, destination)) throw new Error("That path leaves the project.");
+  const sameFile = samePath(real, destination);
+  if (!sameFile && existsSync(destination)) throw new Error("That name is already used.");
+  if (nextRelative !== located.relative) {
+    if (sameFile) {
+      const temporary = `${destination}.meridian-rename-tmp`;
+      renameSync(real, temporary);
+      renameSync(temporary, destination);
+    } else {
+      renameSync(real, destination);
+    }
+  }
+  return {
+    name: clean,
+    path: nextRelative,
+    kind: listed.isDirectory() ? "dir" : "file",
+  };
 }
 
 export function removeProject(id: string) {

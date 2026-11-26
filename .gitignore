@@ -49,3 +49,6 @@ next-env.d.ts
 .impeccable/
 .impeccable.md
 /AGENTS.md
+
+# graphify local caches (regenerated; keep the graph output itself)
+graphify-out/cache/

@@ -7,6 +7,8 @@ import { useEffect, useState } from "react";
 
 import { readJson } from "@/components/client-api";
 import { ChatScreen } from "@/components/chat-screen";
+import { SidebarToggle } from "@/components/sidebar";
+import { useOpenSidebar } from "@/components/shell-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { groupPlaces } from "@/lib/travel-math";
@@ -73,6 +75,7 @@ type TravelPayload = {
 };
 
 export function TravelScreen() {
+  const openSidebar = useOpenSidebar();
   const tripQuery = useSearchParams().get("trip");
   const [payload, setPayload] = useState<TravelPayload | null>(null);
   const [plannerSessionId, setPlannerSessionId] = useState<string | null>(null);
@@ -233,6 +236,7 @@ export function TravelScreen() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex items-center gap-3 border-b border-border px-3 py-2 md:px-4">
+        <SidebarToggle onOpen={openSidebar} />
         <Link href="/" className="shrink-0 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
           Chats
         </Link>

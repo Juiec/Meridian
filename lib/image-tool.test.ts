@@ -106,6 +106,10 @@ describe("image_generate chat tool", () => {
 
     const saved = listGeneratedImages({ sessionId: session.id });
     expect(saved).toHaveLength(2);
+    const names = saved.map((item) => item.fileName).sort();
+    expect(names[0]).toMatch(/^meridian_\d{12}0\.png$/);
+    expect(names[1]).toMatch(/^meridian_\d{12}1\.png$/);
+    expect(names[0]?.slice(0, -5)).toBe(names[1]?.slice(0, -5));
     expect(saved[0]).toMatchObject({
       toolCallId: "call-42",
       prompt: "A greenhouse on the moon",

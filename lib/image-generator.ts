@@ -1,5 +1,5 @@
 import { ImageSettingsError, resolveImageTarget } from "@/lib/image-settings";
-import { detectImageMediaType, insertGeneratedImage, type GeneratedImage } from "@/lib/image-store";
+import { detectImageMediaType, insertGeneratedImage, reserveBatchStamp, type GeneratedImage } from "@/lib/image-store";
 import { endpointSettingsList, type ResolvedSettings } from "@/lib/settings";
 
 export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -10,6 +10,7 @@ export type GeneratedImagePayload = {
   b64_json?: string;
   url?: string;
   revised_prompt?: string;
+  fileName?: string | null;
 };
 
 export type ImageGenerationInput = {
@@ -189,7 +190,8 @@ export async function generateImages(
   if (data.length === 0) throw new ImageRequestError(`${endpoint.name} returned no images.`, 502);
 
   const images: GeneratedImage[] = [];
-  for (const item of data) {
+  const batchStamp = reserveBatchStamp(data.length);
+  for (const [index, item] of data.entries()) {
     let bytes: Buffer | null = null;
     let mediaType = "image/png";
     let sourceUrl: string | null = null;
@@ -225,6 +227,8 @@ export async function generateImages(
         toolCallId: input.toolCallId ?? null,
         source: input.source ?? (input.image ? "edit" : "generate"),
         sourceUrl,
+        batchStamp,
+        batchIndex: index,
       }),
     );
   }
