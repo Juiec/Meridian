@@ -1,4 +1,5 @@
 import { mkdirSync } from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
 
 export function meridianHome(): string {
@@ -25,7 +26,24 @@ export function imagesDir(): string {
 }
 
 export function skillsDir(): string {
+  return path.join(meridianHome(), ".agents", "skills");
+}
+
+/** Older project skills. Still read so an existing checkout keeps working. */
+export function legacySkillsDir(): string {
   return path.join(meridianHome(), "skills");
+}
+
+/**
+ * Shared user skills (`~/.agents/skills`), the folder most agent harnesses
+ * install global skills into. "0" scans none. Any other value is a
+ * path-delimiter list of directories, used by tests.
+ */
+export function globalSkillDirs(): string[] {
+  const flag = process.env.MERIDIAN_GLOBAL_SKILLS?.trim();
+  if (flag === "0") return [];
+  if (flag) return flag.split(path.delimiter).map((entry) => entry.trim()).filter(Boolean);
+  return [path.join(homedir(), ".agents", "skills")];
 }
 
 export function agentDir(): string {

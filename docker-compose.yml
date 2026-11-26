@@ -32,7 +32,7 @@ services:
       MODEL: ${MODEL:-}
     volumes:
       - meridian-data:/app/data
-      - ./skills:/app/skills
+      - ./.agents/skills:/app/.agents/skills
       - ./agent:/app/agent
     restart: unless-stopped
 

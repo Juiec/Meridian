@@ -73,7 +73,7 @@ export function subagentSystemPrompt(input: {
     "# Context summary",
     input.summary,
     "# How to work",
-    "Use tools when you need data the summary does not contain. Load a skill with skill_view only when one index entry matches. Do not invent facts. Do not delegate. Do not write memory unless the task tells you to save a lasting fact. travel_plan changes the shared trip map. When you finish, reply with the result itself: what you found or did, the useful details, and anything unfinished. Do not narrate tool calls.",
+    "Use tools when you need data the summary does not contain. Load a skill with skill_view only when one index entry matches. Do not invent facts. Do not delegate. Do not create or edit skills. Do not write memory unless the task tells you to save a lasting fact. travel_plan changes the shared trip map. When you finish, reply with the result itself: what you found or did, the useful details, and anything unfinished. Do not narrate tool calls.",
     backgroundBlocks.length > 0 ? `# Background\n\n${backgroundBlocks.join("\n\n")}` : "",
     "# Skills index",
     "Descriptions are routing hints. Load a body with skill_view before following a procedure.",
@@ -85,7 +85,7 @@ export function subagentSystemPrompt(input: {
 }
 
 function withoutDelegate(definitions: ToolDefinition[]): ToolDefinition[] {
-  return definitions.filter((tool) => tool.function.name !== "delegate");
+  return definitions.filter((tool) => tool.function.name !== "delegate" && tool.function.name !== "skill_write");
 }
 
 type Acc = { id: string; name: string; arguments: string };

@@ -59,7 +59,7 @@ export function Inspector({
           <span className="text-[11px] tracking-[0.18em] uppercase [writing-mode:vertical-rl]">Desk</span>
         </button>
       ) : (
-        <div className="flex h-full min-h-0 w-[24rem] max-w-full flex-col">
+        <div className="flex h-full min-h-0 w-[24rem] max-w-full flex-col xl:max-w-none">
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-5 py-4">
         <h2 className="font-display text-2xl leading-none tracking-tight">Desk</h2>
         <div className="flex items-center gap-1">
