@@ -283,9 +283,6 @@ export function Sidebar({
       <div className="flex items-center justify-between gap-2 px-4 pt-4 pb-3">
         <Link href="/" className="group" onClick={onClose}>
           <span className="font-display text-[1.65rem] leading-none tracking-tight">Meridian</span>
-          <span className="mt-1 block text-[11px] tracking-[0.16em] text-muted-foreground uppercase">
-            Personal agent
-          </span>
         </Link>
         <div className="flex items-center gap-1">
           <ThemeToggle />

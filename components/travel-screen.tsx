@@ -356,68 +356,46 @@ export function TravelScreen() {
                     </Button>
                   </div>
                 </form>
-                <div className="scroll-hidden max-h-44 shrink-0 overflow-y-auto px-4 py-3 lg:px-5">
-                  {places.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No stops yet. Add a city, station, or stay under the map. Leave the day blank until you know when you will be there.</p>
-                  ) : (
-                    <div className="space-y-5">
-                      {rows.map((row) =>
-                        row.kind === "gap" ? (
-                          <p key={`gap-${row.start}`} className="text-sm text-muted-foreground">{gapLabel(row.start, row.end)}</p>
-                        ) : (
-                          <section key={row.day ?? "none"}>
-                            <h2 className="text-sm font-medium">{row.day ? `Day ${row.day}` : "Not on a day"}</h2>
-                            <ul className="mt-1">
-                              {row.places.map((place, index) => {
-                                const previous = row.places[index - 1];
-                                const leg = previous ? legsByPair.get(`${previous.id}:${place.id}`) : undefined;
-                                return (
-                                  <li key={place.id} className="border-b border-border py-2">
-                                    {leg ? <p className="pb-2 text-xs text-muted-foreground">{legLabel(leg)}</p> : null}
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: TRIP_KIND_COLORS[place.kind] }} aria-hidden />
-                                      <span className="min-w-0 flex-1 text-sm">
-                                        {place.name}
-                                        <span className="ml-2 text-xs text-muted-foreground">{KIND_OPTIONS.find(([kind]) => kind === place.kind)?.[1]}</span>
-                                      </span>
-                                      <label className="flex items-center gap-1 text-xs text-muted-foreground">
-                                        Day
-                                        <Input
-                                          className="h-8 w-16 text-xs"
-                                          type="number"
-                                          min={1}
-                                          max={MAX_TRIP_DAYS}
-                                          step={1}
-                                          inputMode="numeric"
-                                          aria-label={`Day for ${place.name}, up to ${MAX_TRIP_DAYS}`}
-                                          placeholder="—"
-                                          value={placeDayDrafts[place.id] ?? (place.day?.toString() ?? "")}
-                                          onChange={(event) =>
-                                            setPlaceDayDrafts((current) => ({ ...current, [place.id]: event.target.value }))
-                                          }
-                                          onBlur={(event) => {
-                                            const day = event.currentTarget.value;
-                                            if (day !== (place.day?.toString() ?? "")) void movePlace(place.id, day);
-                                          }}
-                                          onKeyDown={(event) => {
-                                            if (event.key === "Enter") event.currentTarget.blur();
-                                          }}
-                                        />
-                                      </label>
-                                      <Button type="button" variant="ghost" size="sm" onClick={() => void removePlace(place.id)}>
-                                        Remove
-                                      </Button>
-                                    </div>
-                                  </li>
-                                );
-                              })}
-                            </ul>
-                          </section>
-                        ),
+                <div className="plan-well scroll-hidden shrink-0 overflow-y-auto px-4 py-4 lg:px-5">
+                      {places.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">No stops yet. Add a city, station, or stay under the map. Leave the day blank until you know when you will be there.</p>
+                      ) : (
+                        <div className="space-y-6">
+                          {rows.map((row) =>
+                            row.kind === "gap" ? (
+                              <p key={`gap-${row.start}`} className="text-sm text-muted-foreground">{gapLabel(row.start, row.end)}</p>
+                            ) : (
+                              <section key={row.day ?? "none"}>
+                                <h2 className="font-display text-2xl leading-none">{row.day ? `Day ${row.day}` : "Not on a day"}</h2>
+                                <ul className="mt-2">
+                                  {row.places.map((place, index) => {
+                                    const previous = row.places[index - 1];
+                                    const leg = previous ? legsByPair.get(`${previous.id}:${place.id}`) : undefined;
+                                    return (
+                                      <li key={place.id} className="border-b border-border py-3">
+                                        {leg ? <p className="pb-2 text-xs text-muted-foreground">{legLabel(leg)}</p> : null}
+                                        <div className="flex flex-wrap items-center gap-3">
+                                          <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: TRIP_KIND_COLORS[place.kind] }} aria-hidden />
+                                          <span className="plan-name min-w-0 flex-1 leading-5">
+                                            {place.name}
+                                            <span className="ml-2 text-xs text-muted-foreground">{KIND_OPTIONS.find(([kind]) => kind === place.kind)?.[1]}</span>
+                                          </span>
+                                          <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                                            Day
+                                            <Input className="h-8 w-16 text-xs" type="number" min={1} max={MAX_TRIP_DAYS} step={1} inputMode="numeric" aria-label={`Day for ${place.name}, up to ${MAX_TRIP_DAYS}`} placeholder="—" value={placeDayDrafts[place.id] ?? (place.day?.toString() ?? "")} onChange={(event) => setPlaceDayDrafts((current) => ({ ...current, [place.id]: event.target.value }))} onBlur={(event) => { const day = event.currentTarget.value; if (day !== (place.day?.toString() ?? "")) void movePlace(place.id, day); }} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} />
+                                          </label>
+                                          <Button type="button" variant="ghost" size="sm" onClick={() => void removePlace(place.id)}>Remove</Button>
+                                        </div>
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                              </section>
+                            ),
+                          )}
+                        </div>
                       )}
                     </div>
-                  )}
-                </div>
               </>
             ) : (
               <div className="scroll-hidden min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 lg:px-5">

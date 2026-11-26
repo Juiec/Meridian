@@ -147,6 +147,19 @@
   }
 }
 
+.studio-edit-preview {
+  width: 84px;
+  height: 84px;
+}
+
+.plan-well {
+  max-height: 420px;
+}
+
+.plan-well .plan-name {
+  font-size: 16px;
+}
+
 .scroll-hidden {
   scrollbar-width: none;
   -ms-overflow-style: none;
