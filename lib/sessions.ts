@@ -8,6 +8,7 @@ import { prepareTripPlan } from "@/lib/travel-store";
 import { discoverSkills, skillsIndexHash } from "@/lib/skills";
 import { parseAskUser, readAskAnswer } from "@/lib/ask-user";
 import { isChatMode } from "@/lib/chat-mode";
+import { getProject } from "@/lib/projects";
 import type { Attachment, ChatMode, SessionRecord, SessionSummary, StoredMessage, ToolCallRecord } from "@/lib/types";
 
 type SessionRow = {
@@ -24,6 +25,7 @@ type SessionRow = {
   archived: number | bigint | null;
   chat_mode: string | null;
   parent_id: string | null;
+  project_id: string | null;
   created_at: number | bigint;
   updated_at: number | bigint;
 };
@@ -67,6 +69,8 @@ function mapSession(row: SessionRow): SessionRecord {
     archived: Number(row.archived ?? 0) === 1,
     chatMode: isChatMode(row.chat_mode) ? row.chat_mode : "agent",
     parentId: row.parent_id,
+    projectId: row.project_id || null,
+    projectName: projectLabel(row.project_id),
     createdAt: num(row.created_at) ?? 0,
     updatedAt: num(row.updated_at) ?? 0,
   };
@@ -109,11 +113,22 @@ export function toSummary(session: SessionRecord): SessionSummary {
     compacted: Boolean(session.compactedSummary),
     pinned: session.pinned,
     archived: session.archived,
+    projectId: session.projectId,
+    projectName: session.projectName,
   };
 }
 
+function projectLabel(id: string | null): string | null {
+  if (!id) return null;
+  try {
+    return getProject(id)?.name ?? null;
+  } catch {
+    return null;
+  }
+}
+
 const SESSION_COLUMNS = `id, title, purpose, endpoint_id, model, system_prompt, skills_index_hash, compacted_summary,
-              compacted_until_seq, pinned, archived, chat_mode, parent_id, created_at, updated_at`;
+              compacted_until_seq, pinned, archived, chat_mode, parent_id, project_id, created_at, updated_at`;
 
 function likeTerm(query: string): string {
   return `%${query.replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
@@ -262,6 +277,7 @@ export function updateSession(
     pinned: boolean;
     archived: boolean;
     chatMode: ChatMode;
+    projectId: string | null;
   }>,
 ): SessionRecord | null {
   const current = getSession(id);
@@ -279,13 +295,14 @@ export function updateSession(
     pinned: patch.pinned ?? current.pinned,
     archived: patch.archived ?? current.archived,
     chatMode: patch.chatMode ?? current.chatMode,
+    projectId: patch.projectId === undefined ? current.projectId : patch.projectId,
     updatedAt: Date.now(),
   };
   db()
     .prepare(
       `UPDATE sessions
        SET title = ?, endpoint_id = ?, model = ?, skills_index_hash = ?, compacted_summary = ?,
-           compacted_until_seq = ?, system_prompt = ?, pinned = ?, archived = ?, chat_mode = ?, updated_at = ?
+           compacted_until_seq = ?, system_prompt = ?, pinned = ?, archived = ?, chat_mode = ?, project_id = ?, updated_at = ?
        WHERE id = ?`,
     )
     .run(
@@ -299,6 +316,7 @@ export function updateSession(
       next.pinned ? 1 : 0,
       next.archived ? 1 : 0,
       next.chatMode,
+      next.projectId,
       next.updatedAt,
       id,
     );
@@ -312,12 +330,17 @@ export function updateSessionTitleIfDefault(id: string, title: string): SessionR
   return getSession(id);
 }
 
+export function detachProject(projectId: string) {
+  db().prepare("UPDATE sessions SET project_id = NULL, updated_at = ? WHERE project_id = ?").run(Date.now(), projectId);
+}
+
 export function createSubagentSession(input: {
   parentId: string;
   title: string;
   endpointId: string;
   model: string;
   systemPrompt: string;
+  projectId?: string | null;
 }): SessionRecord {
   const id = crypto.randomUUID();
   const now = Date.now();
@@ -325,10 +348,10 @@ export function createSubagentSession(input: {
   db()
     .prepare(
       `INSERT INTO sessions
-        (id, title, purpose, endpoint_id, model, system_prompt, skills_index_hash, parent_id, created_at, updated_at)
-       VALUES (?, ?, 'subagent', ?, ?, ?, ?, ?, ?, ?)`,
+        (id, title, purpose, endpoint_id, model, system_prompt, skills_index_hash, parent_id, project_id, created_at, updated_at)
+       VALUES (?, ?, 'subagent', ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(id, input.title, input.endpointId, input.model, input.systemPrompt, hash, input.parentId, now, now);
+    .run(id, input.title, input.endpointId, input.model, input.systemPrompt, hash, input.parentId, input.projectId ?? null, now, now);
   const session = getSession(id);
   if (!session) throw new Error("Subagent session was not saved.");
   return session;

@@ -29,6 +29,7 @@ type AppState = {
   createSession: () => Promise<string>;
   renameSession: (id: string, title: string) => Promise<void>;
   deleteSession: (id: string) => Promise<void>;
+  assignProject: (sessionId: string, projectId: string | null) => Promise<void>;
   activeSessionId: string | null;
   setActiveSessionId: (id: string | null) => void;
   settings: PublicSettings | null;
@@ -211,6 +212,20 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     [refreshSessions],
   );
 
+  const assignProject = useCallback(
+    async (sessionId: string, projectId: string | null) => {
+      await readJson(
+        await fetch(`/api/sessions/${sessionId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId }),
+        }),
+      );
+      await refreshSessions();
+    },
+    [refreshSessions],
+  );
+
   const deleteSession = useCallback(
     async (id: string) => {
       await readJson(
@@ -234,6 +249,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       createSession,
       renameSession,
       deleteSession,
+      assignProject,
       activeSessionId,
       setActiveSessionId,
       settings,
@@ -258,6 +274,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       createSession,
       renameSession,
       deleteSession,
+      assignProject,
       activeSessionId,
       setActiveSessionId,
       settings,

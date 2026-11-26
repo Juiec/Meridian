@@ -47,6 +47,8 @@ export type SessionRecord = {
   pinned: boolean;
   archived: boolean;
   chatMode: ChatMode;
+  projectId: string | null;
+  projectName: string | null;
   createdAt: number;
   updatedAt: number;
 };
@@ -62,6 +64,8 @@ export type SessionSummary = {
   compacted: boolean;
   pinned: boolean;
   archived: boolean;
+  projectId: string | null;
+  projectName: string | null;
 };
 
 export type PublicSettings = {

@@ -17,6 +17,8 @@ export const READONLY_TOOLS = new Set([
   "travel_places",
   "travel_route",
   "travel_prices",
+  "workspace_list",
+  "workspace_read",
 ]);
 
 export function isChatMode(value: unknown): value is ChatMode {
@@ -54,7 +56,7 @@ export function modeInstructions(mode: ChatMode): string {
   if (mode === "ask") {
     return `# Mode: Ask
 
-You are in Ask mode. Answer the question. You may call only read-only tools: skill_view, list_skills, fetch_url, current_time, travel_geocode, travel_weather, travel_places, travel_route, and travel_prices. Do not write memory, generate images, change the trip, delegate, or call MCP or custom tools. If that work is needed, say the user can switch to Agent with /agent.`;
+You are in Ask mode. Answer the question. You may call only read-only tools: skill_view, list_skills, fetch_url, current_time, travel_geocode, travel_weather, travel_places, travel_route, travel_prices, workspace_list, and workspace_read. Do not write memory, generate images, change the trip, write project files, run commands, delegate, or call MCP or custom tools. If that work is needed, say the user can switch to Agent with /agent.`;
   }
   if (mode === "plan") {
     return `# Mode: Plan
@@ -65,5 +67,5 @@ When a missing choice would change the plan, and you cannot look it up or reason
   }
   return `# Mode: Agent
 
-You are in Agent mode. Use the tools you need, including ones that write memory, generate images, or update the trip. When a side task would fill this chat with tool output, call delegate so a subagent works from a short summary and returns only the result.`;
+You are in Agent mode. Use the tools you need, including ones that write memory, generate images, update the trip, or change the bound project. workspace_write and workspace_run stay inside that project folder. When a side task would fill this chat with tool output, call delegate so a subagent works from a short summary and returns only the result.`;
 }

@@ -1,7 +1,7 @@
 import { connection } from "next/server";
 
 import { caught, jsonError, readBody } from "@/lib/http";
-import { addProject, listProjects } from "@/lib/projects";
+import { addProject, createProject, listProjects } from "@/lib/projects";
 
 export async function GET() {
   await connection();
@@ -16,11 +16,10 @@ export async function POST(request: Request) {
   await connection();
   const body = await readBody(request);
   if (body instanceof Response) return body;
-  if (typeof body.name !== "string" || typeof body.root !== "string") {
-    return jsonError("name and root must be strings.");
-  }
+  if (typeof body.name !== "string") return jsonError("name must be a string.");
   try {
-    const project = addProject(body.name, body.root);
+    const project =
+      typeof body.root === "string" ? addProject(body.name, body.root) : createProject(body.name);
     return Response.json({ project }, { status: 201 });
   } catch (err) {
     return caught(err, 400);

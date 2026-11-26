@@ -47,6 +47,7 @@ export function Sidebar({
     health,
     healthChecking,
     queueComposer,
+    assignProject,
   } = useAppState();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [titleDraft, setTitleDraft] = useState("");
@@ -107,6 +108,21 @@ export function Sidebar({
     queueComposer(line);
     onClose();
     if (pathname !== "/") router.push("/");
+  }
+
+  async function useProject(projectId: string) {
+    setActionError(null);
+    try {
+      let sessionId = activeSessionId;
+      if (!sessionId) {
+        sessionId = await createSession();
+        setActiveSessionId(sessionId);
+      }
+      await assignProject(sessionId, projectId);
+      if (pathname !== "/") router.push("/");
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Could not use that project.");
+    }
   }
 
   async function saveTitle(id: string) {
@@ -330,7 +346,7 @@ export function Sidebar({
             )}
             onClick={() => setPane("files")}
           >
-            Files
+            Projects
           </button>
         </div>
         {pane === "chats" ? (
@@ -352,11 +368,16 @@ export function Sidebar({
         ) : null}
       </div>
       <nav
-        aria-label={pane === "chats" ? "Chats" : "Project files"}
+        aria-label={pane === "chats" ? "Chats" : "Projects"}
         className="scroll-hidden min-h-0 flex-1 overflow-y-auto px-2 pb-3"
       >
         {pane === "files" ? (
-          <ProjectFiles onMention={mentionFile} />
+          <ProjectFiles
+            onMention={mentionFile}
+            onUse={useProject}
+            onChanged={() => void refreshSessions()}
+            activeProjectId={sessions.find((session) => session.id === activeSessionId)?.projectId ?? null}
+          />
         ) : sessionsLoading ? (
           <p className="px-2 py-3 text-sm text-muted-foreground">Loading sessions…</p>
         ) : sessionsError ? (

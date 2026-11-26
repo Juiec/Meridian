@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   archived INTEGER NOT NULL DEFAULT 0,
   chat_mode TEXT NOT NULL DEFAULT 'agent',
   parent_id TEXT,
+  project_id TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -88,6 +89,9 @@ function migrate(database: DatabaseSync) {
   }
   if (sessions.size > 0 && !sessions.has("parent_id")) {
     database.exec("ALTER TABLE sessions ADD COLUMN parent_id TEXT");
+  }
+  if (sessions.size > 0 && !sessions.has("project_id")) {
+    database.exec("ALTER TABLE sessions ADD COLUMN project_id TEXT");
   }
   database.exec("CREATE INDEX IF NOT EXISTS sessions_parent ON sessions(parent_id)");
   if (sessions.size > 0) {

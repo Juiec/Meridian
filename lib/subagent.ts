@@ -13,7 +13,9 @@ import {
   updateSession,
   visibleMessages,
 } from "@/lib/sessions";
+import { getProject } from "@/lib/projects";
 import { parseToolArguments, TOOLS, type ToolDefinition } from "@/lib/tools";
+import { workspaceInstructions } from "@/lib/workspace";
 import type { ToolRoute } from "@/lib/tool-registry";
 import type { StoredMessage, ToolCallRecord } from "@/lib/types";
 
@@ -201,13 +203,17 @@ export async function runSubagent(input: {
     compactedSummary: parent.compactedSummary,
     messages: visibleMessages(parent),
   });
-  const prompt = subagentSystemPrompt({ task: request.task, summary, now: new Date() });
+  const project = parent.projectId ? getProject(parent.projectId) : null;
+  const prompt = [subagentSystemPrompt({ task: request.task, summary, now: new Date() }), workspaceInstructions(project)]
+    .filter(Boolean)
+    .join("\n\n");
   const child = createSubagentSession({
     parentId: parent.id,
     title: request.title,
     endpointId: parent.endpointId,
     model,
     systemPrompt: prompt,
+    projectId: parent.projectId,
   });
   insertMessage({
     sessionId: child.id,

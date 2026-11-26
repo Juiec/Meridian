@@ -87,6 +87,7 @@ export function ChatScreen({
     composerSeed,
     queueComposer,
     skills,
+    assignProject,
   } = useAppState();
   const activeSessionId = embedded ? embeddedSessionId ?? null : selectedSessionId;
   const [focusTick, setFocusTick] = useState(0);
@@ -791,6 +792,18 @@ export function ChatScreen({
                       ? "Prompt snapshot frozen for this session"
                       : "Sessions, skills, and a short memory"}
                 </p>
+                {!embedded && activeSummary?.projectName && activeSessionId ? (
+                  <span className="inline-flex min-w-0 items-center gap-1 text-xs text-copper">
+                    <span className="truncate">Working in {activeSummary.projectName}</span>
+                    <button
+                      type="button"
+                      className="shrink-0 text-muted-foreground underline-offset-2 hover:underline"
+                      onClick={() => void assignProject(activeSessionId, null)}
+                    >
+                      Leave
+                    </button>
+                  </span>
+                ) : null}
                 <ContextMeter usage={threadDetail ? contextUsage : null} />
               </div>
             </div>

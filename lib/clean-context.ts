@@ -1,6 +1,7 @@
 import { buildApiMessages } from "@/lib/agent";
 import { buildToolBundle } from "@/lib/agent-tools";
-import { filterToolsForMode, modeInstructions } from "@/lib/chat-mode";
+import { filterToolsForMode } from "@/lib/chat-mode";
+import { turnInstructions } from "@/lib/workspace";
 import {
   CONTEXT_CLEANED_PREFIX,
   apiMessageChars,
@@ -20,7 +21,7 @@ const limitCache = new Map<string, { at: number; limit: number | null }>();
 export function measureSessionContext(sessionId: string): ContextUsage {
   const session = getSession(sessionId);
   if (!session) throw new Error("Session not found.");
-  const system = `${session.systemPrompt}\n\n${modeInstructions(session.chatMode)}`;
+  const system = `${session.systemPrompt}\n\n${turnInstructions(session)}`;
   const history = buildApiMessages(sessionId);
   const tools = filterToolsForMode(buildToolBundle().definitions, session.chatMode);
   const systemChars = system.length;

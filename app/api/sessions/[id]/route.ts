@@ -1,6 +1,7 @@
 import { connection } from "next/server";
 
 import { caught, jsonError, readBody } from "@/lib/http";
+import { getProject } from "@/lib/projects";
 import { deleteSession, fileSessionAsTrip, getSession, listMessages, toSummary, updateSession } from "@/lib/sessions";
 import { endpointSettingsList } from "@/lib/settings";
 
@@ -20,7 +21,14 @@ export async function PATCH(request: Request, context: Context) {
   const body = await readBody(request);
   if (body instanceof Response) return body;
   if (!getSession(id)) return jsonError("Session not found.", 404);
-  const patch: { title?: string; endpointId?: string; model?: string; pinned?: boolean; archived?: boolean } = {};
+  const patch: {
+    title?: string;
+    endpointId?: string;
+    model?: string;
+    pinned?: boolean;
+    archived?: boolean;
+    projectId?: string | null;
+  } = {};
   if (typeof body.title === "string") {
     const title = body.title.trim();
     if (!title) return jsonError("Title cannot be empty.");
@@ -37,6 +45,12 @@ export async function PATCH(request: Request, context: Context) {
   }
   if (typeof body.pinned === "boolean") patch.pinned = body.pinned;
   if (typeof body.archived === "boolean") patch.archived = body.archived;
+  if (body.projectId === null) patch.projectId = null;
+  else if (typeof body.projectId === "string") {
+    const projectId = body.projectId.trim();
+    if (!projectId || !getProject(projectId)) return jsonError("Project not found.", 404);
+    patch.projectId = projectId;
+  }
   if (body.purpose === "travel") {
     const filed = fileSessionAsTrip(id);
     if (!filed) return jsonError("Session not found.", 404);
