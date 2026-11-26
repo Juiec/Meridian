@@ -1,7 +1,6 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -237,9 +236,6 @@ export function TravelScreen() {
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex items-center gap-3 border-b border-border px-3 py-2 md:px-4">
         <SidebarToggle onOpen={openSidebar} />
-        <Link href="/" className="shrink-0 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
-          Chats
-        </Link>
         <div ref={setHeaderHost} className="flex min-w-0 flex-1 flex-wrap items-center gap-2" />
       </header>
       <main className="@container/travel min-h-0 flex-1 overflow-y-auto @min-[860px]/travel:overflow-hidden">
