@@ -4,7 +4,9 @@ import { endpointSettingsList, type ResolvedSettings } from "@/lib/settings";
 
 export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 export const MAX_IMAGES = 10;
+export const MAX_INPUT_IMAGES = 16;
 const MAX_PROMPT_LENGTH = 32_000;
+const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 
 export type GeneratedImagePayload = {
   b64_json?: string;
@@ -21,6 +23,7 @@ export type ImageGenerationInput = {
   sessionId?: string | null;
   toolCallId?: string | null;
   image?: File;
+  references?: File[];
   source?: "generate" | "edit";
 };
 
@@ -124,23 +127,22 @@ export async function generateImages(
   if (!Number.isInteger(input.count) || input.count < 1 || input.count > MAX_IMAGES) {
     throw new ImageRequestError(`Batch amount must be between 1 and ${MAX_IMAGES}.`);
   }
-  if (input.image && !["image/png", "image/jpeg", "image/webp"].includes(input.image.type)) {
-    throw new ImageRequestError("Use a PNG, JPEG, or WebP image to edit.");
-  }
-  if (input.image && input.image.size > MAX_IMAGE_BYTES) {
-    throw new ImageRequestError("The edit image must be 20 MB or smaller.");
-  }
+  const files = collectInputImages(input);
 
   const headers = new Headers();
   if (endpoint.apiKey) headers.set("Authorization", `Bearer ${endpoint.apiKey}`);
   let body: BodyInit;
-  if (input.image) {
+  if (files.length > 0) {
     const form = new FormData();
     form.set("model", model);
     form.set("prompt", prompt);
     form.set("size", input.size);
     form.set("n", String(input.count));
-    form.set("image", input.image, input.image.name);
+    if (files.length === 1) {
+      form.set("image", files[0], files[0].name);
+    } else {
+      for (const file of files) form.append("image[]", file, file.name);
+    }
     body = form;
   } else {
     headers.set("Content-Type", "application/json");
@@ -150,7 +152,7 @@ export async function generateImages(
   const baseUrl = endpoint.baseUrl.replace(/\/+$/, "");
   let upstream: Response;
   try {
-    upstream = await fetch(`${baseUrl}/images/${input.image ? "edits" : "generations"}`, {
+    upstream = await fetch(`${baseUrl}/images/${files.length > 0 ? "edits" : "generations"}`, {
       method: "POST",
       headers,
       body,
@@ -223,13 +225,38 @@ export async function generateImages(
         size: input.size,
         sessionId: input.sessionId ?? null,
         toolCallId: input.toolCallId ?? null,
-        source: input.source ?? (input.image ? "edit" : "generate"),
+        source: input.source ?? (files.length > 0 ? "edit" : "generate"),
         sourceUrl,
       }),
     );
   }
 
   return { data, images, endpointName: endpoint.name };
+}
+
+function assertImageFile(file: File, role: "edit" | "reference") {
+  if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+    throw new ImageRequestError(
+      role === "edit" ? "Use a PNG, JPEG, or WebP image to edit." : "Use a PNG, JPEG, or WebP image as a reference.",
+    );
+  }
+  if (file.size > MAX_IMAGE_BYTES) {
+    throw new ImageRequestError(
+      role === "edit" ? "The edit image must be 20 MB or smaller." : "Each reference image must be 20 MB or smaller.",
+    );
+  }
+}
+
+/** Edit image first, then references. Any of these pictures routes the request to the edits endpoint. */
+function collectInputImages(input: ImageGenerationInput): File[] {
+  const references = input.references ?? [];
+  if (input.image) assertImageFile(input.image, "edit");
+  for (const file of references) assertImageFile(file, "reference");
+  const files = [...(input.image ? [input.image] : []), ...references];
+  if (files.length > MAX_INPUT_IMAGES) {
+    throw new ImageRequestError(`Use at most ${MAX_INPUT_IMAGES} pictures in one request.`);
+  }
+  return files;
 }
 
 export function messageOfImageError(error: unknown): string {

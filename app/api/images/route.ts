@@ -11,6 +11,7 @@ type ImageRequest = {
   size: string;
   count: number;
   image?: File;
+  references: File[];
 };
 
 async function parseRequest(request: Request): Promise<ImageRequest | Response> {
@@ -27,7 +28,14 @@ async function parseRequest(request: Request): Promise<ImageRequest | Response> 
       ) {
         return jsonError("Endpoint, model, prompt, size, and batch amount are required.");
       }
-      return { endpointId: body.endpointId, model: body.model, prompt: body.prompt, size: body.size, count: body.n };
+      return {
+        endpointId: body.endpointId,
+        model: body.model,
+        prompt: body.prompt,
+        size: body.size,
+        count: body.n,
+        references: [],
+      };
     } catch {
       return jsonError("Could not read the image request.");
     }
@@ -41,6 +49,7 @@ async function parseRequest(request: Request): Promise<ImageRequest | Response> 
     const size = form.get("size");
     const rawCount = form.get("n");
     const image = form.get("image");
+    const references = form.getAll("reference");
     if (
       typeof endpointId !== "string" ||
       typeof model !== "string" ||
@@ -52,7 +61,16 @@ async function parseRequest(request: Request): Promise<ImageRequest | Response> 
     }
     const count = Number(rawCount);
     if (image !== null && !(image instanceof File)) return jsonError("The edit image is invalid.");
-    return { endpointId, model, prompt, size, count, image: image ?? undefined };
+    if (references.some((item) => !(item instanceof File))) return jsonError("A reference image is invalid.");
+    return {
+      endpointId,
+      model,
+      prompt,
+      size,
+      count,
+      image: image instanceof File && image.size > 0 ? image : undefined,
+      references: references.filter((item): item is File => item instanceof File && item.size > 0),
+    };
   } catch {
     return jsonError("Could not read the image request.");
   }
@@ -80,6 +98,7 @@ export async function POST(request: Request) {
         size: input.size,
         count: input.count,
         image: input.image,
+        references: input.references,
       },
       request.signal,
     );

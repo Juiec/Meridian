@@ -3,8 +3,10 @@
 import {
   ArrowDownToLine,
   ImagePlus,
+  Images,
   LoaderCircle,
   Paintbrush,
+  Plus,
   Sparkles,
   X,
 } from "lucide-react";
@@ -12,6 +14,8 @@ import { useEffect, useRef, useState, useCallback } from "react";
 
 import { readJson } from "@/components/client-api";
 import { useAppState } from "@/components/app-state";
+import { useOpenSidebar } from "@/components/shell";
+import { SidebarToggle } from "@/components/sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,6 +28,16 @@ const IMAGE_SIZES = [
   { value: "auto", label: "Auto", dimensions: "Let the model decide" },
   { value: "custom", label: "Custom", dimensions: "Choose your own dimensions" },
 ] as const;
+
+const MAX_INPUT_IMAGES = 16;
+const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
+
+type ReferenceImage = {
+  id: string;
+  file: File;
+  preview: string;
+};
 
 type GeneratedImage = {
   b64_json?: string;
@@ -50,8 +64,12 @@ async function fetchSavedImages(): Promise<StoredImage[]> {
 
 export function ImageStudio() {
   const { settings } = useAppState();
+  const openSidebar = useOpenSidebar();
   const fileInput = useRef<HTMLInputElement>(null);
+  const referenceInput = useRef<HTMLInputElement>(null);
   const previewUrl = useRef<string | null>(null);
+  const referenceUrls = useRef<string[]>([]);
+  const referenceSeq = useRef(0);
   const [prompt, setPrompt] = useState("");
   const [size, setSize] = useState("1024x1024");
   const [width, setWidth] = useState(1024);
@@ -59,6 +77,7 @@ export function ImageStudio() {
   const [count, setCount] = useState(1);
   const [editImage, setEditImage] = useState<File | null>(null);
   const [editPreview, setEditPreview] = useState<string | null>(null);
+  const [references, setReferences] = useState<ReferenceImage[]>([]);
   const [endpointId, setEndpointId] = useState("");
   const [imageDefaultId, setImageDefaultId] = useState("");
   const [modelDraft, setModelDraft] = useState("");
@@ -96,6 +115,7 @@ export function ImageStudio() {
 
   useEffect(() => () => {
     if (previewUrl.current) URL.revokeObjectURL(previewUrl.current);
+    for (const url of referenceUrls.current) URL.revokeObjectURL(url);
   }, []);
 
   useEffect(() => {
@@ -143,11 +163,74 @@ export function ImageStudio() {
     }
   }
 
+  function imageProblem(file: File): string | null {
+    if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) return "Use a PNG, JPEG, or WebP image.";
+    if (file.size > MAX_UPLOAD_BYTES) return "Each image must be 20 MB or smaller.";
+    return null;
+  }
+
   function selectEditImage(file: File | null) {
+    if (file) {
+      const problem = imageProblem(file);
+      if (problem) {
+        setError(problem);
+        return;
+      }
+      if (references.length >= MAX_INPUT_IMAGES) {
+        setError("Remove a reference image first. One request holds 16 pictures.");
+        return;
+      }
+    }
     if (previewUrl.current) URL.revokeObjectURL(previewUrl.current);
     previewUrl.current = file ? URL.createObjectURL(file) : null;
     setEditImage(file);
     setEditPreview(previewUrl.current);
+    if (file) setError(null);
+  }
+
+  function addReferences(list: FileList | null) {
+    if (!list || list.length === 0) return;
+    const room = MAX_INPUT_IMAGES - (editImage ? 1 : 0) - references.length;
+    if (room <= 0) {
+      setError("One request holds 16 pictures. Remove one before adding another.");
+      return;
+    }
+    const accepted: ReferenceImage[] = [];
+    let problem: string | null = null;
+    for (const file of Array.from(list)) {
+      if (accepted.length >= room) {
+        problem = "One request holds 16 pictures. The extra files were left out.";
+        break;
+      }
+      const invalid = imageProblem(file);
+      if (invalid) {
+        problem = invalid;
+        continue;
+      }
+      const preview = URL.createObjectURL(file);
+      referenceUrls.current.push(preview);
+      referenceSeq.current += 1;
+      accepted.push({ id: `ref-${referenceSeq.current}`, file, preview });
+    }
+    if (accepted.length > 0) setReferences((current) => [...current, ...accepted]);
+    setError(problem);
+  }
+
+  function removeReference(id: string) {
+    setReferences((current) => {
+      const target = current.find((item) => item.id === id);
+      if (target) {
+        URL.revokeObjectURL(target.preview);
+        referenceUrls.current = referenceUrls.current.filter((url) => url !== target.preview);
+      }
+      return current.filter((item) => item.id !== id);
+    });
+  }
+
+  function clearReferences() {
+    for (const item of references) URL.revokeObjectURL(item.preview);
+    referenceUrls.current = [];
+    setReferences([]);
   }
 
   async function generate() {
@@ -176,14 +259,15 @@ export function ImageStudio() {
     const selectedSize = size === "custom" ? `${width}x${height}` : size;
     const headers = new Headers();
     let body: BodyInit;
-    if (editImage) {
+    if (editImage || references.length > 0) {
       const form = new FormData();
       form.set("endpointId", selectedEndpoint.id);
       form.set("model", model);
       form.set("prompt", prompt.trim());
       form.set("size", selectedSize);
       form.set("n", String(count));
-      form.set("image", editImage, editImage.name);
+      if (editImage) form.set("image", editImage, editImage.name);
+      for (const item of references) form.append("reference", item.file, item.file.name);
       body = form;
     } else {
       headers.set("Content-Type", "application/json");
@@ -213,22 +297,27 @@ export function ImageStudio() {
   }
 
   const sizeValue = size === "custom" ? `${width} × ${height}` : IMAGE_SIZES.find((item) => item.value === size)?.dimensions;
+  const referenceLimit = MAX_INPUT_IMAGES - (editImage ? 1 : 0);
+  const noun = count === 1 ? "image" : `${count} images`;
+  const actionLabel = editImage && references.length
+    ? `Edit ${noun} with references`
+    : editImage
+      ? `Edit ${noun}`
+      : references.length
+        ? `Generate ${noun} from references`
+        : `Generate ${noun}`;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex items-center justify-between gap-3 border-b border-border px-4 py-3 md:px-6">
-        <div className="min-w-0">
+        <SidebarToggle onOpen={openSidebar} />
+        <div className="min-w-0 flex-1">
           <p className="font-display text-2xl leading-none">Image Studio</p>
           <p className="mt-1 text-xs text-muted-foreground">Choose a saved endpoint and image model.</p>
         </div>
-        <div className="flex shrink-0 items-center gap-3">
-          <Link href="/" className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
-            Chats
-          </Link>
-          <Link href="/settings" className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
-            Manage endpoints
-          </Link>
-        </div>
+        <Link href="/settings" className="shrink-0 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+          Manage endpoints
+        </Link>
       </header>
 
       <div className="@container/studio min-h-0 flex-1 overflow-y-auto">
@@ -293,45 +382,138 @@ export function ImageStudio() {
               </div>
             ) : null}
 
-            <div className="mt-6">
-              <div className="mb-2 flex items-center justify-between">
-                <label htmlFor="edit-image" className="text-sm font-medium">Edit an image <span className="font-normal text-muted-foreground">· optional</span></label>
-                {editImage ? (
-                  <button type="button" className="inline-flex items-center gap-1 rounded-sm text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline" onClick={() => selectEditImage(null)}>
-                    <X className="size-3" /> Remove
-                  </button>
-                ) : null}
-              </div>
-              <input
-                id="edit-image"
-                ref={fileInput}
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                className="sr-only"
-                onChange={(event) => selectEditImage(event.target.files?.[0] ?? null)}
-              />
-              {editImage && editPreview ? (
-                <div className="flex items-center gap-3 rounded-xl border border-border bg-card/60 p-2.5">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={editPreview} alt={`Preview of ${editImage.name}`} className="size-12 rounded-lg object-cover" />
-                  <div className="min-w-0">
-                    <p className="truncate text-sm">{editImage.name}</p>
-                    <p className="text-xs text-muted-foreground">{(editImage.size / 1024 / 1024).toFixed(1)} MB</p>
-                  </div>
+            <div className="mt-6 space-y-3">
+              <p className="text-sm leading-6 text-muted-foreground">
+                The edit image is the picture that changes. Reference images are only looked at.
+              </p>
+
+              <div>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <label htmlFor="edit-image" className="text-sm font-medium">Edit image</label>
+                  {editImage ? (
+                    <button type="button" disabled={busy} className="inline-flex items-center gap-1 rounded-sm text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline disabled:opacity-50" onClick={() => selectEditImage(null)}>
+                      <X className="size-3" /> Remove
+                    </button>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">Optional</span>
+                  )}
                 </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => fileInput.current?.click()}
-                  className="flex min-h-20 w-full items-center gap-3 rounded-xl border border-dashed border-border bg-card/40 px-3 text-left transition-colors hover:border-copper/70 hover:bg-card"
-                >
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-copper"><ImagePlus className="size-4" /></span>
-                  <span>
-                    <span className="block text-sm">Choose an image to edit</span>
-                    <span className="mt-0.5 block text-xs text-muted-foreground">PNG, JPEG or WebP · up to 20 MB</span>
-                  </span>
-                </button>
-              )}
+                <input
+                  id="edit-image"
+                  ref={fileInput}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="sr-only"
+                  onChange={(event) => {
+                    selectEditImage(event.target.files?.[0] ?? null);
+                    event.target.value = "";
+                  }}
+                />
+                {editImage && editPreview ? (
+                  <div className="overflow-hidden rounded-xl border border-copper/40 bg-card">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={editPreview} alt={`Edit image: ${editImage.name}`} className="h-40 w-full bg-muted object-contain" />
+                    <div className="flex items-center justify-between gap-3 border-t border-copper/25 px-3 py-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm">{editImage.name}</p>
+                        <p className="text-xs text-muted-foreground">{(editImage.size / 1024 / 1024).toFixed(1)} MB · this picture changes</p>
+                      </div>
+                      <button type="button" disabled={busy} onClick={() => fileInput.current?.click()} className="shrink-0 text-xs text-copper underline-offset-2 hover:underline disabled:opacity-50">
+                        Replace
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => fileInput.current?.click()}
+                    className="flex min-h-28 w-full items-center gap-3 rounded-xl border border-dashed border-copper/40 bg-copper/5 px-3 text-left transition-colors hover:border-copper hover:bg-copper/10 disabled:opacity-50"
+                  >
+                    <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-copper/15 text-copper"><ImagePlus className="size-4" /></span>
+                    <span>
+                      <span className="block text-sm font-medium">Choose the picture to change</span>
+                      <span className="mt-0.5 block text-xs text-muted-foreground">One image. PNG, JPEG, or WebP · 20 MB.</span>
+                    </span>
+                  </button>
+                )}
+              </div>
+
+              <div>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <label htmlFor="reference-images" className="text-sm font-medium">Reference images</label>
+                  {references.length > 0 ? (
+                    <button type="button" disabled={busy} className="inline-flex items-center gap-1 rounded-sm text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline disabled:opacity-50" onClick={clearReferences}>
+                      <X className="size-3" /> Clear
+                    </button>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">{referenceLimit} at most</span>
+                  )}
+                </div>
+                <input
+                  id="reference-images"
+                  ref={referenceInput}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  multiple
+                  className="sr-only"
+                  onChange={(event) => {
+                    addReferences(event.target.files);
+                    event.target.value = "";
+                  }}
+                />
+                {references.length > 0 ? (
+                  <div className="rounded-xl border border-sage/40 bg-sage/5 p-2.5">
+                    <ul className="flex flex-wrap gap-2">
+                      {references.map((item) => (
+                        <li key={item.id} className="relative">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={item.preview} alt={`Reference: ${item.file.name}`} className="size-16 rounded-lg object-cover" />
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => removeReference(item.id)}
+                            aria-label={`Remove reference ${item.file.name}`}
+                            className="absolute top-1 right-1 flex size-5 items-center justify-center rounded-full border border-border bg-background text-foreground disabled:opacity-50"
+                          >
+                            <X className="size-3" />
+                          </button>
+                        </li>
+                      ))}
+                      {references.length < referenceLimit ? (
+                        <li>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => referenceInput.current?.click()}
+                            aria-label="Add a reference image"
+                            className="flex size-16 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-sage/50 text-sage transition-colors hover:border-sage hover:bg-sage/10 disabled:opacity-50"
+                          >
+                            <Plus className="size-4" />
+                            <span className="text-[10px] font-medium">Add</span>
+                          </button>
+                        </li>
+                      ) : null}
+                    </ul>
+                    <p className="mt-2 px-0.5 text-xs text-muted-foreground">
+                      {references.length} of {referenceLimit} · looked at, not changed
+                    </p>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => referenceInput.current?.click()}
+                    className="flex min-h-16 w-full items-center gap-3 rounded-xl border border-dashed border-sage/40 bg-sage/5 px-3 text-left transition-colors hover:border-sage hover:bg-sage/10 disabled:opacity-50"
+                  >
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-sage/15 text-sage"><Images className="size-4" /></span>
+                    <span>
+                      <span className="block text-sm font-medium">Add pictures to look at</span>
+                      <span className="mt-0.5 block text-xs text-muted-foreground">Several images. They guide the result and stay unchanged.</span>
+                    </span>
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="mt-6 space-y-3 rounded-xl border border-border bg-muted/40 p-3.5">
@@ -400,7 +582,7 @@ export function ImageStudio() {
 
             <Button type="button" size="lg" className="mt-5 h-11 w-full rounded-xl" disabled={busy || !selectedEndpoint || !selectedEndpoint.baseUrl || !model || !prompt.trim()} onClick={() => void generate()}>
               {busy ? <LoaderCircle className="animate-spin" /> : <Sparkles />}
-              {busy ? "Making your image…" : `Generate ${count === 1 ? "image" : `${count} images`}`}
+              {busy ? "Making your image…" : actionLabel}
             </Button>
           </section>
 
@@ -465,7 +647,7 @@ export function ImageStudio() {
                   <div className="mx-auto flex size-10 items-center justify-center rounded-xl border border-white/15 bg-white/5 text-[#e8b78d]"><Paintbrush className="size-4" /></div>
                   <p className="mt-3 font-display text-2xl">A frame waiting for you.</p>
                   <p className="mt-2 text-sm leading-6 text-white/65">
-                    Start with a prompt, or bring a picture to reimagine. Your results will land here.
+                    Start with a prompt. Add an edit image to change a picture, or reference images for the model to look at.
                   </p>
                 </div>
                 <div className="absolute bottom-4 left-4 font-mono text-[9px] tracking-[0.16em] text-white/50 uppercase">Meridian · Studio canvas</div>

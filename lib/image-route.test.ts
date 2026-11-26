@@ -86,6 +86,66 @@ describe("image generation route", () => {
     expect(sent.get("image")).toBeInstanceOf(File);
   });
 
+  it("sends the edit image first and reference images after it", async () => {
+    const upstream = vi.fn().mockResolvedValue(Response.json({ data: [{ b64_json: "edited-image" }] }));
+    vi.stubGlobal("fetch", upstream);
+    const body = new FormData();
+    body.set("endpointId", "image-provider");
+    body.set("model", "gpt-image-2");
+    body.set("prompt", "Keep the person. Restyle the room like the references.");
+    body.set("size", "1024x1024");
+    body.set("n", "1");
+    body.set("image", new Blob(["edit"], { type: "image/png" }), "edit.png");
+    body.append("reference", new Blob(["ref-a"], { type: "image/jpeg" }), "room.jpg");
+    body.append("reference", new Blob(["ref-b"], { type: "image/webp" }), "lamp.webp");
+
+    const response = await POST(new Request("http://localhost/api/images", { method: "POST", body }));
+
+    expect(response.status).toBe(200);
+    const [url, init] = upstream.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://images.example/v1/images/edits");
+    const sent = init.body as FormData;
+    expect((sent.getAll("image[]") as File[]).map((file) => file.name)).toEqual(["edit.png", "room.jpg", "lamp.webp"]);
+  });
+
+  it("uses reference images alone as an edit request", async () => {
+    const upstream = vi.fn().mockResolvedValue(Response.json({ data: [{ b64_json: "referenced-image" }] }));
+    vi.stubGlobal("fetch", upstream);
+    const body = new FormData();
+    body.set("endpointId", "image-provider");
+    body.set("model", "gpt-image-2");
+    body.set("prompt", "A gift basket containing the items in the references.");
+    body.set("size", "1024x1024");
+    body.set("n", "1");
+    body.append("reference", new Blob(["soap"], { type: "image/png" }), "soap.png");
+
+    const response = await POST(new Request("http://localhost/api/images", { method: "POST", body }));
+
+    expect(response.status).toBe(200);
+    const [url, init] = upstream.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://images.example/v1/images/edits");
+    const sent = init.body as FormData;
+    expect((sent.get("image") as File).name).toBe("soap.png");
+  });
+
+  it("rejects a reference that is not a png, jpeg, or webp", async () => {
+    const upstream = vi.fn();
+    vi.stubGlobal("fetch", upstream);
+    const body = new FormData();
+    body.set("endpointId", "image-provider");
+    body.set("model", "gpt-image-2");
+    body.set("prompt", "Use the sketch.");
+    body.set("size", "1024x1024");
+    body.set("n", "1");
+    body.append("reference", new Blob(["gif"], { type: "image/gif" }), "sketch.gif");
+
+    const response = await POST(new Request("http://localhost/api/images", { method: "POST", body }));
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Use a PNG, JPEG, or WebP image as a reference." });
+    expect(upstream).not.toHaveBeenCalled();
+  });
+
   it("rejects unsupported dimensions without making a provider request", async () => {
     const upstream = vi.fn();
     vi.stubGlobal("fetch", upstream);
