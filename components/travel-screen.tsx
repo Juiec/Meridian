@@ -6,8 +6,8 @@ import { useEffect, useState } from "react";
 
 import { readJson } from "@/components/client-api";
 import { ChatScreen } from "@/components/chat-screen";
-import { useOpenSidebar } from "@/components/shell";
 import { SidebarToggle } from "@/components/sidebar";
+import { useOpenSidebar } from "@/components/shell-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { groupPlaces } from "@/lib/travel-math";

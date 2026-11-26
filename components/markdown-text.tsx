@@ -4,6 +4,8 @@ import { Check, Copy } from "lucide-react";
 import { isValidElement, useEffect, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 
+import { splitToolCallText, type TextSpan } from "@/lib/text-tool-calls";
+
 function nodeText(node: ReactNode): string {
   if (typeof node === "string" || typeof node === "number") return String(node);
   if (Array.isArray(node)) return node.map(nodeText).join("");
@@ -94,6 +96,43 @@ function CodeBlock({ code, language }: { code: string; language: string }) {
       <pre className="overflow-x-auto p-3 text-[13px] leading-6">
         <code className="font-mono">{code.replace(/\n$/, "")}</code>
       </pre>
+    </div>
+  );
+}
+
+function TextToolCallBlock({ span }: { span: Extract<TextSpan, { kind: "call" }> }) {
+  const parameters = span.parameters.filter((param) => param.value.length > 0 || !param.partial);
+  return (
+    <div className="space-y-2">
+      <p className="font-mono text-[13px] text-copper">{span.name || "tool call"}</p>
+      {parameters.length > 0 ? (
+        parameters.map((param, index) => (
+          <CodeBlock
+            key={`${param.name}-${index}`}
+            code={param.value}
+            language={param.partial ? `${param.name} …` : param.name}
+          />
+        ))
+      ) : (
+        <CodeBlock code={span.raw} language={span.closed ? "tool call" : "tool call …"} />
+      )}
+    </div>
+  );
+}
+
+/** Model prose. A textual tool call stays literal so its file body is not parsed as markdown. */
+export function AssistantText({ text }: { text: string }) {
+  const spans = splitToolCallText(text);
+  if (spans.length === 1 && spans[0].kind === "prose") return <MarkdownText text={spans[0].text} />;
+  return (
+    <div className="space-y-3">
+      {spans.map((span, index) =>
+        span.kind === "prose" ? (
+          span.text.trim() ? <MarkdownText key={index} text={span.text} /> : null
+        ) : (
+          <TextToolCallBlock key={index} span={span} />
+        ),
+      )}
     </div>
   );
 }

@@ -43,3 +43,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local coding-agent tooling
+.workbuddy-ai/
+.impeccable/
+.impeccable.md
+/AGENTS.md
+
+# graphify local caches (regenerated; keep the graph output itself)
+graphify-out/cache/

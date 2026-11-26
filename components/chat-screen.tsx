@@ -6,6 +6,17 @@ import { createPortal } from "react-dom";
 
 import { useAppState } from "@/components/app-state";
 import { readJson } from "@/components/client-api";
+import {
+  claimTurn,
+  clearFlight,
+  flightFor,
+  sessionEpoch,
+  releaseTurn,
+  startFlight,
+  subscribeFlights,
+  updateFlight,
+  type Flight,
+} from "@/components/live-flight";
 import { Composer, type ComposerAttachment, type ComposerTool } from "@/components/composer";
 import { Inspector } from "@/components/inspector";
 import { QuestionCard } from "@/components/question-card";
@@ -19,6 +30,7 @@ import { askAnswerPayload, findPendingQuestion } from "@/lib/ask-user";
 import { CONTEXT_CLEANED_PREFIX, type ContextUsage } from "@/lib/context-usage";
 import { insertSkillToken } from "@/lib/slash-menu";
 import { readSse } from "@/lib/sse";
+import { extractTextToolCalls } from "@/lib/text-tool-calls";
 import type { AgentEvent, SessionRecord, StoredMessage } from "@/lib/types";
 import type { ToolsOverview } from "@/lib/tool-types";
 
@@ -83,6 +95,7 @@ export function ChatScreen({
     composerSeed,
     queueComposer,
     skills,
+    assignProject,
   } = useAppState();
   const activeSessionId = embedded ? embeddedSessionId ?? null : selectedSessionId;
   const [focusTick, setFocusTick] = useState(0);
@@ -93,11 +106,8 @@ export function ChatScreen({
   const [threadError, setThreadError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
-  const [running, setRunning] = useState(false);
-  const [streamingId, setStreamingId] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
-  const [live, setLive] = useState<{ parts: LivePart[]; status: string } | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [streamedQuestion, setStreamedQuestion] = useState<ToolPart | null>(null);
   const deskCollapsed = useSyncExternalStore(subscribeDesk, getDeskCollapsed, () => false);
@@ -108,11 +118,29 @@ export function ChatScreen({
   const [contextUsage, setContextUsage] = useState<ContextUsage | null>(null);
   const [tripDayState, setTripDayState] = useState<{ id: string; days: number[]; focus: number | null } | null>(null);
   const [cleaning, setCleaning] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
   const sendingRef = useRef(false);
-  const runFor = useRef<string | null>(null);
-  const roundRef = useRef<{ n: number; max: number } | null>(null);
   const localId = useRef(0);
+  const viewRef = useRef(activeSessionId);
+  viewRef.current = activeSessionId;
+  const flight = useSyncExternalStore(
+    subscribeFlights,
+    () => flightFor(activeSessionId),
+    () => null,
+  );
+  const flightPresent = Boolean(flight);
+  const flightSettled = Boolean(flight && !flight.running);
+  const running = Boolean(flight?.running);
+  const live = flight?.live ?? null;
+  const shownStatus = flight ? flight.status : status;
+  const shownError = flight ? flight.streamError : streamError;
+  const shownQuestion = flight ? flight.streamedQuestion : streamedQuestion;
+  const viewedDetail =
+    (flight?.detail?.id === activeSessionId ? flight.detail : null) ??
+    (detail?.id === activeSessionId ? detail : null);
+  const messagesRef = useRef(messages);
+  const detailRef = useRef(detail);
+  messagesRef.current = flight?.messages ?? messages;
+  detailRef.current = flight?.detail ?? detail;
 
   if (!embedded && composerSeed && composerSeed !== appliedSeed) {
     setAppliedSeed(composerSeed);
@@ -156,36 +184,39 @@ export function ChatScreen({
     const ticket = ++contextTicket.current;
     try {
       const data = await readJson<{ context: ContextUsage }>(await fetch(`/api/sessions/${id}/context`));
-      if (contextTicket.current === ticket) setContextUsage(data.context);
+      if (contextTicket.current === ticket && viewRef.current === id) setContextUsage(data.context);
     } catch {
-      if (contextTicket.current === ticket) setContextUsage(null);
+      if (contextTicket.current === ticket && viewRef.current === id) setContextUsage(null);
     }
   }, []);
 
-  const load = useCallback(async (id: string): Promise<StoredMessage[] | null> => {
+  const load = useCallback(async (id: string): Promise<DetailResponse | null> => {
     setThreadError(null);
     try {
       const data = await readJson<DetailResponse>(await fetch(`/api/sessions/${id}`));
-      setDetail(data.session);
-      setMessages(data.messages);
-      setModelDraft(data.session.model);
-      setEndpointDraft(data.session.endpointId);
+      if (viewRef.current === id && !flightFor(id)?.running) {
+        setDetail(data.session);
+        setMessages(data.messages);
+        setModelDraft(data.session.model);
+        setEndpointDraft(data.session.endpointId);
+      }
       void refreshContext(id);
-      return data.messages;
+      return data;
     } catch (err) {
-      setThreadError(err instanceof Error ? err.message : "Could not open the session.");
+      if (viewRef.current === id) setThreadError(err instanceof Error ? err.message : "Could not open the session.");
       return null;
     }
   }, [refreshContext]);
 
   useEffect(() => {
-    if (!activeSessionId || runFor.current === activeSessionId) return;
+    if (!activeSessionId || flightFor(activeSessionId)) return;
     const ac = new AbortController();
+    const epoch = sessionEpoch(activeSessionId);
     void (async () => {
       try {
         const response = await fetch(`/api/sessions/${activeSessionId}`, { signal: ac.signal });
         const data = await readJson<DetailResponse>(response);
-        if (ac.signal.aborted) return;
+        if (ac.signal.aborted || sessionEpoch(activeSessionId) !== epoch) return;
         setThreadError(null);
         setDetail(data.session);
         setMessages(data.messages);
@@ -199,9 +230,26 @@ export function ChatScreen({
       }
     })();
     return () => ac.abort();
-  }, [activeSessionId, refreshContext]);
+  }, [activeSessionId, flightPresent, refreshContext]);
 
-  const travelPlanId = detail?.purpose === "travel" && detail.id === activeSessionId ? detail.id : null;
+  useEffect(() => {
+    if (!flightSettled || !activeSessionId) return;
+    const finished = flightFor(activeSessionId);
+    if (!finished || finished.running) return;
+    setMessages(finished.messages);
+    if (finished.detail) {
+      setDetail(finished.detail);
+      setModelDraft(finished.detail.model);
+      setEndpointDraft(finished.detail.endpointId);
+    }
+    setStatus(finished.status);
+    setStreamError(finished.streamError);
+    setStreamedQuestion(finished.streamedQuestion);
+    clearFlight(finished.sessionId);
+    void refreshContext(finished.sessionId);
+  }, [flightSettled, activeSessionId, refreshContext]);
+
+  const travelPlanId = viewedDetail?.purpose === "travel" ? viewedDetail.id : null;
   const tripDays = tripDayState?.id === travelPlanId ? tripDayState.days : [];
   const focusDay = tripDayState?.id === travelPlanId ? tripDayState.focus : null;
 
@@ -233,114 +281,20 @@ export function ChatScreen({
   function applyEvent(event: AgentEvent, sessionId: string) {
     if (event.type === "title") {
       setTitleOverride({ sessionId, title: event.title });
-      setDetail((current) =>
-        current?.id === sessionId ? { ...current, title: event.title, updatedAt: Date.now() } : current,
-      );
       void refreshSessions().catch((err) => {
-        setStreamError(err instanceof Error ? `Could not refresh chat list: ${err.message}` : "Could not refresh chat list.");
+        const message = err instanceof Error ? `Could not refresh chat list: ${err.message}` : "Could not refresh chat list.";
+        updateFlight(sessionId, (current) => ({ ...current, streamError: message }));
       });
-    } else if (event.type === "title_error") {
-      setStreamError(event.message);
-    } else if (event.type === "iteration") {
-      roundRef.current = { n: event.n, max: event.max };
-      if (event.phase === "answer") {
-        setStatus("Writing the answer");
-        setLive((current) => ({ parts: current?.parts ?? [], status: "Writing" }));
-      } else {
-        setStatus("Thinking");
-        setLive((current) => ({ parts: current?.parts ?? [], status: "Thinking" }));
-      }
-    } else if (event.type === "partial") {
-      setMessages((current) => [...current, event.message]);
-      setLive((current) =>
-        current ? { parts: current.parts.filter((part) => part.kind === "tool"), status: "Steering" } : current,
-      );
-      setStatus("Steering");
-    } else if (event.type === "user") {
-      setMessages((current) => {
-        const index = current.findIndex((message) => message.role === "user" && message.id.startsWith("local-"));
-        if (index === -1) return [...current, event.message];
-        const next = [...current];
-        next[index] = event.message;
-        return next;
-      });
-    } else if (event.type === "question") {
-      setStatus("Waiting for your answer");
-      setStreamedQuestion({
-        kind: "tool",
-        id: event.toolCallId,
-        name: "ask_user",
-        arguments: JSON.stringify({ prompt: event.prompt, options: event.options }),
-        awaitingUser: true,
-      });
-      setLive((current) => {
-        const parts = (current?.parts ?? []).map((part) =>
-          part.kind === "tool" && part.id === event.toolCallId
-            ? { ...part, pending: false, awaitingUser: true }
-            : part,
-        );
-        return { parts, status: "Waiting for your answer" };
-      });
-    } else if (event.type === "note") {
-      setMessages((current) => [...current, event.message]);
-    } else if (event.type === "delta") {
-      setLive((current) => appendText(current, event.text));
-    } else if (event.type === "reasoning") {
-      setLive((current) => appendReasoning(current, event.text));
-    } else if (event.type === "tool_call") {
-      const round = roundRef.current;
-      const running = `Running ${event.call.name}`;
-      setLive((current) => ({
-        parts: [
-          ...(current?.parts ?? []),
-          {
-            kind: "tool",
-            id: event.call.id,
-            name: event.call.name,
-            arguments: event.call.arguments,
-            pending: true,
-          },
-        ],
-        status: running,
-      }));
-      setStatus(round && round.n > 1 ? `Pass ${round.n} of ${round.max} · ${running}` : running);
-    } else if (event.type === "subagent") {
-      setStatus(event.detail);
-      setLive((current) => {
-        if (!current) return { parts: [], status: event.detail };
-        return {
-          ...current,
-          status: event.detail,
-          parts: current.parts.map((part) =>
-            part.kind === "tool" && part.pending && part.name === "delegate" ? { ...part, status: event.detail } : part,
-          ),
-        };
-      });
-    } else if (event.type === "tool_result") {
-      setLive((current) => {
-        if (!current) return current;
-        return {
-          ...current,
-          parts: current.parts.map((part) =>
-            part.kind === "tool" && part.id === event.toolCallId
-              ? { ...part, result: event.content, pending: false, ok: event.ok }
-              : part,
-          ),
-        };
-      });
-    } else if (event.type === "compaction") {
-      setStatus(event.mode === "model" ? "Compacting earlier context" : "Compacting without the model");
-      setDetail((current) => (current ? { ...current, compactedSummary: event.summary } : current));
-    } else if (event.type === "error") {
-      setStreamError(event.message);
     }
+    updateFlight(sessionId, (current) => reduceFlight(current, event));
   }
 
-  async function runChat(sessionId: string, body: Record<string, unknown>, optimistic?: StoredMessage[]) {
+  async function runChat(sessionId: string, body: Record<string, unknown>, seed: Flight) {
     let waiting = false;
-    const abort = new AbortController();
-    abortRef.current = abort;
-    if (optimistic && optimistic.length > 0) setMessages((current) => [...current, ...optimistic]);
+    const abort = seed.abort;
+    let settledMessages = seed.messages;
+    let settledDetail = seed.detail;
+    let failed: string | null = null;
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -357,47 +311,61 @@ export function ChatScreen({
         if (event && typeof event === "object" && "type" in event) {
           if (event.type === "done" && event.awaiting === "question") waiting = true;
           applyEvent(event, sessionId);
-        } else if (name === "error") setStreamError("The stream returned an unreadable event.");
+        } else if (name === "error") {
+          updateFlight(sessionId, (current) => ({ ...current, streamError: "The stream returned an unreadable event." }));
+        }
       });
-      const loaded = await load(sessionId);
-      if (loaded) waiting = findPendingQuestion(loaded) !== null;
+      const loaded = await readSession(sessionId);
+      if (loaded) {
+        settledMessages = loaded.messages;
+        settledDetail = loaded.session;
+        waiting = findPendingQuestion(loaded.messages) !== null;
+      }
       await refreshSessions();
       await refreshMemory();
     } catch (err) {
-      if (err instanceof Error && err.name === "AbortError") {
-        setStatus("Stopped");
-        if (sessionId) await load(sessionId).catch(() => undefined);
-      } else {
-        setMessages((current) => current.filter((message) => !message.id.startsWith("local-")));
-        setStreamError(err instanceof Error ? err.message : "The turn failed.");
-        if (sessionId) await load(sessionId).catch(() => undefined);
+      const aborted = err instanceof Error && err.name === "AbortError";
+      if (!aborted) {
+        failed = err instanceof Error ? err.message : "The turn failed.";
+        updateFlight(sessionId, (current) => ({
+          ...current,
+          messages: current.messages.filter((message) => !message.id.startsWith("local-")),
+          streamError: failed,
+        }));
+      }
+      const loaded = await readSession(sessionId);
+      if (loaded) {
+        settledMessages = loaded.messages;
+        settledDetail = loaded.session;
       }
     } finally {
-      const stopped = abortRef.current?.signal.aborted ?? false;
-      abortRef.current = null;
-      runFor.current = null;
-      setStreamingId(null);
-      setLive(null);
-      setRunning(false);
-      if (!waiting) setStreamedQuestion(null);
-      if (!stopped) setStatus(waiting ? "Waiting for your answer" : null);
+      const stopped = abort.signal.aborted;
+      updateFlight(sessionId, (current) => ({
+        ...current,
+        messages: settledMessages,
+        detail: settledDetail ?? current.detail,
+        live: null,
+        running: false,
+        streamError: failed ?? current.streamError,
+        streamedQuestion: waiting ? current.streamedQuestion : null,
+        status: stopped ? "Stopped" : waiting ? "Waiting for your answer" : null,
+      }));
     }
   }
 
   async function begin(sessionId: string | null) {
-    let id = sessionId;
-    if (!id) {
+    if (!sessionId) {
       if (embedded) throw new Error("The travel conversation is not ready yet.");
-      id = await createSession();
-      runFor.current = id;
-      setStreamingId(id);
+      const id = await createSession();
       setActiveSessionId(id);
-      await load(id);
-      return id;
+      const loaded = await load(id);
+      return { id, messages: loaded?.messages ?? [], detail: loaded?.session ?? null };
     }
-    runFor.current = id;
-    setStreamingId(id);
-    return id;
+    return {
+      id: sessionId,
+      messages: messagesRef.current,
+      detail: detailRef.current?.id === sessionId ? detailRef.current : null,
+    };
   }
 
   async function cleanContext() {
@@ -405,7 +373,7 @@ export function ChatScreen({
     setCleaning(true);
     setStreamError(null);
     try {
-      const body = detail?.purpose === "travel" && focusDay ? { day: focusDay } : {};
+      const body = viewedDetail?.purpose === "travel" && focusDay ? { day: focusDay } : {};
       const data = await readJson<{ context: ContextUsage }>(
         await fetch(`/api/sessions/${activeSessionId}/context`, {
           method: "POST",
@@ -424,25 +392,24 @@ export function ChatScreen({
 
   async function submit(text: string, files: ComposerAttachment[]) {
     const content = text.trim();
-    if (sendingRef.current || running) return;
+    if (sendingRef.current || flightFor(activeSessionId)?.running) return;
     if (!content && files.length === 0) return;
     sendingRef.current = true;
     setStreamError(null);
-    setRunning(true);
-    setStatus("Sending");
-    setLive({ parts: [], status: "Sending" });
-    let sessionId = activeSessionId;
+    let claimed: string | null = null;
     try {
-      sessionId = await begin(sessionId);
+      const started = await begin(activeSessionId);
+      if (!claimTurn(started.id)) return;
+      claimed = started.id;
       localId.current += 1;
-      const pending = findPendingQuestion(messages);
+      const pending = findPendingQuestion(started.messages);
       const answerText = content || "Look at the attached files.";
       const answered = pending ? askAnswerPayload(pending.options, answerText) : null;
       const optimistic: StoredMessage[] = [];
       if (pending && answered) {
         optimistic.push({
           id: `local-tool-${localId.current}`,
-          sessionId,
+          sessionId: started.id,
           seq: -1,
           role: "tool",
           content: JSON.stringify(answered, null, 2),
@@ -457,7 +424,7 @@ export function ChatScreen({
       if (!pending || files.length > 0) {
         optimistic.push({
           id: `local-${localId.current}`,
-          sessionId,
+          sessionId: started.id,
           seq: -1,
           role: "user",
           content: answered?.answer ?? answerText,
@@ -476,10 +443,24 @@ export function ChatScreen({
           createdAt: Date.now(),
         });
       }
-      await runChat(sessionId, { content, attachments: files }, optimistic);
+      const seed: Flight = {
+        sessionId: started.id,
+        messages: [...started.messages, ...optimistic],
+        live: { parts: [], status: "Sending" },
+        status: "Sending",
+        running: true,
+        streamError: null,
+        streamedQuestion: null,
+        detail: started.detail,
+        abort: new AbortController(),
+        startedAt: Date.now(),
+        round: null,
+      };
+      startFlight(seed);
+      claimed = null;
+      await runChat(started.id, { content, attachments: files }, seed);
     } catch (err) {
-      setRunning(false);
-      setLive(null);
+      if (claimed) releaseTurn(claimed);
       setStreamError(err instanceof Error ? err.message : "The turn failed.");
     } finally {
       sendingRef.current = false;
@@ -521,8 +502,11 @@ export function ChatScreen({
       attachments: [],
       createdAt: Date.now(),
     };
-    setMessages((current) => [...current, optimistic]);
-    setStatus("Steering");
+    updateFlight(activeSessionId, (current) => ({
+      ...current,
+      messages: [...current.messages, optimistic],
+      status: "Steering",
+    }));
     try {
       const response = await fetch(`/api/sessions/${activeSessionId}/steer`, {
         method: "POST",
@@ -534,29 +518,42 @@ export function ChatScreen({
         throw new Error(data.error || "Could not steer.");
       }
     } catch (err) {
-      setMessages((current) => current.filter((message) => message.id !== optimistic.id));
+      updateFlight(activeSessionId, (current) => ({
+        ...current,
+        messages: current.messages.filter((message) => message.id !== optimistic.id),
+        streamError: err instanceof Error ? err.message : "Could not steer.",
+      }));
       setDraft(content);
-      setStreamError(err instanceof Error ? err.message : "Could not steer.");
     }
   }
 
   async function retryLast() {
-    if (!activeSessionId || running) return;
+    if (!activeSessionId || flightFor(activeSessionId)?.running || sendingRef.current) return;
+    if (!claimTurn(activeSessionId)) return;
     setStreamError(null);
-    setRunning(true);
-    setStatus("Retrying");
-    setLive({ parts: [], status: "Retrying" });
-    setMessages((current) => {
-      const lastUser = [...current].reverse().find((message) => message.role === "user");
-      if (!lastUser) return current;
-      return current.filter((message) => message.seq <= lastUser.seq || message.seq < 0);
-    });
+    const currentMessages = messagesRef.current;
+    const lastUser = [...currentMessages].reverse().find((message) => message.role === "user");
+    const kept = lastUser
+      ? currentMessages.filter((message) => message.seq <= lastUser.seq || message.seq < 0)
+      : currentMessages;
+    const seed: Flight = {
+      sessionId: activeSessionId,
+      messages: kept,
+      live: { parts: [], status: "Retrying" },
+      status: "Retrying",
+      running: true,
+      streamError: null,
+      streamedQuestion: null,
+      detail: detailRef.current?.id === activeSessionId ? detailRef.current : null,
+      abort: new AbortController(),
+      startedAt: Date.now(),
+      round: null,
+    };
+    startFlight(seed);
     try {
-      const sessionId = await begin(activeSessionId);
-      await runChat(sessionId, { retry: true });
+      await runChat(activeSessionId, { retry: true }, seed);
     } catch (err) {
-      setRunning(false);
-      setLive(null);
+      clearFlight(activeSessionId);
       setStreamError(err instanceof Error ? err.message : "Could not retry.");
     }
   }
@@ -579,19 +576,25 @@ export function ChatScreen({
   }
 
   async function saveModel(nextModel?: string, nextEndpointId?: string) {
-    if (!detail) return;
+    const current = detailRef.current;
+    if (!current || current.id !== activeSessionId) return;
     const model = (nextModel ?? modelDraft).trim();
-    const endpointId = nextEndpointId ?? endpointDraft ?? detail.endpointId;
-    if (model === detail.model && endpointId === detail.endpointId) return;
+    const endpointId = nextEndpointId ?? endpointDraft ?? current.endpointId;
+    if (model === current.model && endpointId === current.endpointId) return;
     try {
       await readJson(
-        await fetch(`/api/sessions/${detail.id}`, {
+        await fetch(`/api/sessions/${current.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ model, endpointId }),
         }),
       );
-      setDetail({ ...detail, model, endpointId });
+      const next = { ...current, model, endpointId };
+      setDetail(next);
+      updateFlight(current.id, (existing) => ({
+        ...existing,
+        detail: existing.detail ? { ...existing.detail, model, endpointId } : existing.detail,
+      }));
       setEndpointDraft(endpointId);
       await refreshSessions();
     } catch (err) {
@@ -599,10 +602,8 @@ export function ChatScreen({
     }
   }
 
-  const ownsThread =
-    Boolean(activeSessionId) &&
-    (detail?.id === activeSessionId || streamingId === activeSessionId);
-  const threadDetail = detail?.id === activeSessionId ? detail : null;
+  const threadDetail = viewedDetail;
+  const ownsThread = Boolean(threadDetail) || Boolean(flight);
   const activeSummary = sessions.find((session) => session.id === activeSessionId);
   const headerSource =
     titleOverride?.sessionId === activeSessionId
@@ -611,10 +612,19 @@ export function ChatScreen({
         ? activeSummary.title
         : threadDetail?.title;
   const headerTitle = headerSource && headerSource !== "New session" ? headerSource : "Meridian";
-  const threadMessages = ownsThread ? messages : [];
+  const threadMessages = flight ? flight.messages : ownsThread ? messages : [];
   const pendingQuestion = ownsThread ? findPendingQuestion(threadMessages) : null;
   const pendingId = pendingQuestion?.call.id ?? null;
-  if (pendingId && streamedQuestion) setStreamedQuestion(null);
+  const questionLanded = Boolean(pendingId && shownQuestion);
+  useEffect(() => {
+    if (!questionLanded || !activeSessionId) return;
+    const current = flightFor(activeSessionId);
+    if (current?.streamedQuestion) {
+      updateFlight(activeSessionId, (existing) => (existing.streamedQuestion ? { ...existing, streamedQuestion: null } : existing));
+      return;
+    }
+    setStreamedQuestion(null);
+  }, [questionLanded, activeSessionId]);
   const pinnedQuestion: ToolPart | null = pendingQuestion
     ? {
         kind: "tool",
@@ -623,7 +633,7 @@ export function ChatScreen({
         arguments: pendingQuestion.call.arguments,
         awaitingUser: true,
       }
-    : streamedQuestion;
+    : shownQuestion;
   if (threadDetail && modelFor !== threadDetail.id) {
     setModelFor(threadDetail.id);
     setModelDraft(threadDetail.model);
@@ -781,6 +791,18 @@ export function ChatScreen({
                       ? "Prompt snapshot frozen for this session"
                       : "Sessions, skills, and a short memory"}
                 </p>
+                {!embedded && activeSummary?.projectName && activeSessionId ? (
+                  <span className="inline-flex min-w-0 items-center gap-1 text-xs text-copper">
+                    <span className="truncate">Working in {activeSummary.projectName}</span>
+                    <button
+                      type="button"
+                      className="shrink-0 text-muted-foreground underline-offset-2 hover:underline"
+                      onClick={() => void assignProject(activeSessionId, null)}
+                    >
+                      Leave
+                    </button>
+                  </span>
+                ) : null}
                 <ContextMeter usage={threadDetail ? contextUsage : null} />
               </div>
             </div>
@@ -826,6 +848,7 @@ export function ChatScreen({
         <Transcript
           messages={threadMessages}
           live={ownsThread ? live : null}
+          thinkingKey={flight ? `${flight.sessionId}:${flight.startedAt}` : undefined}
           compactedSummary={threadDetail?.compactedSummary ?? null}
           foldedThroughSeq={foldedThroughSeq}
           loading={Boolean(activeSessionId) && !ownsThread && !threadError}
@@ -843,11 +866,12 @@ export function ChatScreen({
                 body: JSON.stringify({ sessionId: activeSessionId, toolCallId }),
               }),
             );
-            setMessages((current) =>
+            const apply = (current: StoredMessage[]) =>
               current.map((message) =>
                 message.role === "tool" && message.toolCallId === toolCallId ? { ...message, content: data.content } : message,
-              ),
-            );
+              );
+            setMessages(apply);
+            if (activeSessionId) updateFlight(activeSessionId, (current) => ({ ...current, messages: apply(current.messages) }));
           }}
           empty={
             activeSessionId ? (
@@ -865,8 +889,8 @@ export function ChatScreen({
             )
           }
         />
-        {streamError ? (
-          <p className="mx-auto w-full max-w-3xl px-4 pb-2 text-sm text-destructive md:px-6">{streamError}</p>
+        {shownError ? (
+          <p className="mx-auto w-full max-w-3xl px-4 pb-2 text-sm text-destructive md:px-6">{shownError}</p>
         ) : null}
         <Composer
           draft={draft}
@@ -876,14 +900,15 @@ export function ChatScreen({
           onAttachError={setStreamError}
           onSubmit={() => void send()}
           onSteer={() => void steer()}
-          onStop={() => abortRef.current?.abort()}
+          onStop={() => flightFor(activeSessionId)?.abort.abort()}
           onRetry={() => void retryLast()}
           canRetry={canRetry}
           running={running}
-          status={status}
+          status={shownStatus}
+          thinkingKey={flight ? `${flight.sessionId}:${flight.startedAt}` : undefined}
           disabledReason={disabledReason}
           awaitingQuestion={Boolean(pinnedQuestion)}
-          chatMode={detail?.chatMode ?? "agent"}
+          chatMode={threadDetail?.chatMode ?? "agent"}
           skills={skills}
           tools={toolCatalog}
         />
@@ -980,6 +1005,147 @@ function ContextMeter({ usage }: { usage: ContextUsage | null }) {
       </span>
     </div>
   );
+}
+
+async function readSession(id: string): Promise<DetailResponse | null> {
+  try {
+    return await readJson<DetailResponse>(await fetch(`/api/sessions/${id}`));
+  } catch {
+    return null;
+  }
+}
+
+function reduceFlight(current: Flight, event: AgentEvent): Flight {
+  if (event.type === "title") {
+    return {
+      ...current,
+      detail: current.detail ? { ...current.detail, title: event.title, updatedAt: Date.now() } : current.detail,
+    };
+  }
+  if (event.type === "title_error" || event.type === "error") {
+    return { ...current, streamError: event.message };
+  }
+  if (event.type === "iteration") {
+    const round = { n: event.n, max: event.max };
+    if (event.phase === "answer") {
+      return {
+        ...current,
+        round,
+        status: "Writing the answer",
+        live: { parts: current.live?.parts ?? [], status: "Writing" },
+      };
+    }
+    return {
+      ...current,
+      round,
+      status: "Thinking",
+      live: { parts: current.live?.parts ?? [], status: "Thinking" },
+    };
+  }
+  if (event.type === "partial") {
+    return {
+      ...current,
+      messages: [...current.messages, event.message],
+      status: "Steering",
+      live: current.live
+        ? { parts: current.live.parts.filter((part) => part.kind === "tool"), status: "Steering" }
+        : current.live,
+    };
+  }
+  if (event.type === "user") {
+    const index = current.messages.findIndex((message) => message.role === "user" && message.id.startsWith("local-"));
+    if (index === -1) return { ...current, messages: [...current.messages, event.message] };
+    const messages = [...current.messages];
+    messages[index] = event.message;
+    return { ...current, messages };
+  }
+  if (event.type === "question") {
+    const parts = (current.live?.parts ?? []).map((part) =>
+      part.kind === "tool" && part.id === event.toolCallId ? { ...part, pending: false, awaitingUser: true } : part,
+    );
+    return {
+      ...current,
+      status: "Waiting for your answer",
+      streamedQuestion: {
+        kind: "tool",
+        id: event.toolCallId,
+        name: "ask_user",
+        arguments: JSON.stringify({ prompt: event.prompt, options: event.options }),
+        awaitingUser: true,
+      },
+      live: { parts, status: "Waiting for your answer" },
+    };
+  }
+  if (event.type === "note") {
+    return { ...current, messages: [...current.messages, event.message] };
+  }
+  if (event.type === "delta") {
+    return { ...current, live: appendText(current.live, event.text) };
+  }
+  if (event.type === "reasoning") {
+    return { ...current, live: appendReasoning(current.live, event.text) };
+  }
+  if (event.type === "tool_call") {
+    const label = `Running ${event.call.name}`;
+    const kept: LivePart[] = (current.live?.parts ?? []).flatMap((part): LivePart[] => {
+      if (part.kind !== "text") return [part];
+      const prose = extractTextToolCalls(part.text).prose;
+      return prose ? [{ ...part, text: prose }] : [];
+    });
+    const round = current.round;
+    const parts: LivePart[] = [
+      ...kept,
+      {
+        kind: "tool",
+        id: event.call.id,
+        name: event.call.name,
+        arguments: event.call.arguments,
+        pending: true,
+      },
+    ];
+    return {
+      ...current,
+      status: round && round.n > 1 ? `Pass ${round.n} of ${round.max} · ${label}` : label,
+      live: {
+        parts,
+        status: label,
+      },
+    };
+  }
+  if (event.type === "subagent") {
+    return {
+      ...current,
+      status: event.detail,
+      live: {
+        parts: (current.live?.parts ?? []).map((part) =>
+          part.kind === "tool" && part.pending && part.name === "delegate" ? { ...part, status: event.detail } : part,
+        ),
+        status: event.detail,
+      },
+    };
+  }
+  if (event.type === "tool_result") {
+    if (!current.live) return current;
+    return {
+      ...current,
+      live: {
+        ...current.live,
+        parts: current.live.parts.map((part) =>
+          part.kind === "tool" && part.id === event.toolCallId
+            ? { ...part, result: event.content, pending: false, ok: event.ok }
+            : part,
+        ),
+      },
+    };
+  }
+  if (event.type === "compaction") {
+    return {
+      ...current,
+      status: event.mode === "model" ? "Compacting earlier context" : "Compacting without the model",
+      detail: current.detail ? { ...current.detail, compactedSummary: event.summary } : current.detail,
+    };
+  }
+  return current;
 }
 
 function appendText(

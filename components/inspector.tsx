@@ -39,12 +39,12 @@ export function Inspector({
   return (
     <aside
       className={cn(
-        "z-30 flex h-full shrink-0 flex-col overflow-hidden border-l border-border bg-card transition-[width] duration-200 ease-out motion-reduce:transition-none",
+        "z-30 flex h-full shrink-0 flex-col overflow-hidden border-l border-border bg-card text-card-foreground transition-[width] duration-200 ease-out motion-reduce:transition-none",
         open
-          ? "fixed inset-y-0 right-0 w-[min(100%,22rem)] xl:static xl:w-[22rem]"
+          ? "fixed inset-y-0 right-0 w-[min(100%,24rem)] xl:static xl:w-[24rem]"
           : rail
             ? "hidden w-11 xl:flex"
-            : "hidden w-[22rem] xl:flex",
+            : "hidden w-[24rem] xl:flex",
       )}
     >
       {rail ? (
@@ -59,9 +59,9 @@ export function Inspector({
           <span className="text-[11px] tracking-[0.18em] uppercase [writing-mode:vertical-rl]">Desk</span>
         </button>
       ) : (
-        <>
-      <div className="flex items-center justify-between px-4 py-3">
-        <h2 className="text-base font-medium tracking-wide uppercase">Desk</h2>
+        <div className="flex h-full min-h-0 w-[24rem] max-w-full flex-col xl:max-w-none">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-5 py-4">
+        <h2 className="font-display text-2xl leading-none tracking-tight">Desk</h2>
         <div className="flex items-center gap-1">
           <Button
             type="button"
@@ -79,43 +79,43 @@ export function Inspector({
           </Button>
         </div>
       </div>
-      <div className="scroll-hidden min-h-0 flex-1 space-y-6 overflow-y-auto px-4 pb-6">
+      <div className="scroll-hidden min-h-0 flex-1 space-y-8 overflow-y-auto px-5 py-5">
         <section>
-          <h3 className="text-xs tracking-[0.14em] text-muted-foreground uppercase">Skills</h3>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          <h3 className="text-base font-medium tracking-tight">Skills</h3>
+          <p className="mt-2 text-sm leading-6">
             The prompt carries this index. The model loads a body with skill_view, or you can force one with /name. Saving a skill refreshes the index in existing chats on their next message.
           </p>
-          <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => setCreating(true)}>
+          <Button type="button" variant="outline" size="sm" className="mt-3" onClick={() => setCreating(true)}>
             New skill
           </Button>
           <ul className="mt-3 space-y-2">
             {skills.map((skill) => (
-              <li key={skill.name} className="rounded-xl border border-border px-3 py-2">
-                <div className="flex items-start justify-between gap-2">
-                  <p className="font-mono text-[13px] text-copper">{skill.name}</p>
-                  <span className="flex shrink-0 gap-2">
+              <li key={skill.name} className="rounded-xl border border-border px-3 py-2.5">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="font-mono text-sm text-copper">{skill.name}</p>
+                  <span className="flex shrink-0 gap-3">
                     <button
                       type="button"
-                      className="text-[11px] text-muted-foreground underline-offset-2 hover:underline"
+                      className="text-sm underline-offset-2 hover:underline"
                       onClick={() => setEditing(skill.name)}
                     >
                       Edit
                     </button>
                     <button
                       type="button"
-                      className="text-[11px] text-muted-foreground underline-offset-2 hover:underline"
+                      className="text-sm underline-offset-2 hover:underline"
                       onClick={() => onInsertSkill(skill.name)}
                     >
                       Insert
                     </button>
                   </span>
                 </div>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">{skill.description}</p>
+                <p className="mt-1.5 text-sm leading-6">{skill.description}</p>
               </li>
             ))}
           </ul>
           {skippedSkills.length > 0 ? (
-            <p className="mt-2 text-xs text-destructive">
+            <p className="mt-2 text-sm text-destructive">
               {skippedSkills.length} skill file{skippedSkills.length === 1 ? "" : "s"} skipped. Check the frontmatter.
             </p>
           ) : null}
@@ -131,18 +131,18 @@ export function Inspector({
           />
         </section>
         <section>
-          <h3 className="text-xs tracking-[0.14em] text-muted-foreground uppercase">Tools</h3>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          <h3 className="text-base font-medium tracking-tight">Tools</h3>
+          <p className="mt-2 text-sm leading-6">
             Skills are playbooks loaded into the prompt. Tools are functions the model can call. delegate gives one task to a subagent with a short summary, so a long lookup stays out of this chat. MCP and custom HTTP tools are registered in settings and show up in the same tool cards as the built-ins.
           </p>
           <ToolsDeskSummary />
         </section>
         <section>
-          <h3 className="text-xs tracking-[0.14em] text-muted-foreground uppercase">Travel</h3>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          <h3 className="text-base font-medium tracking-tight">Travel</h3>
+          <p className="mt-2 text-sm leading-6">
             Plan visually on the Travel Planner page. It has its own map, itinerary, and fare checks, separate from chat sessions. Nothing is booked from here.
           </p>
-          <Link href="/travel" className="mt-2 inline-block text-xs text-copper underline-offset-2 hover:underline">
+          <Link href="/travel" className="mt-3 inline-block text-sm text-copper underline-offset-2 hover:underline">
             Open Travel Planner
           </Link>
         </section>
@@ -162,23 +162,23 @@ export function Inspector({
           onChanged={refreshMemory}
         />
         <section>
-          <h3 className="text-xs tracking-[0.14em] text-muted-foreground uppercase">Prompt snapshot</h3>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          <h3 className="text-base font-medium tracking-tight">Prompt snapshot</h3>
+          <p className="mt-2 text-sm leading-6">
             Identity, project context, memory, and time are captured when the session starts. The skills index refreshes when skill files change; compaction rebuilds the full prompt.
           </p>
           {systemPrompt ? (
-            <details className="mt-2">
-              <summary className="cursor-pointer text-xs text-copper">Show prompt snapshot</summary>
-              <pre className="mt-2 max-h-80 overflow-auto rounded-lg bg-background p-3 text-[11px] leading-5 whitespace-pre-wrap">
+            <details className="mt-3">
+              <summary className="cursor-pointer text-sm text-copper">Show prompt snapshot</summary>
+              <pre className="mt-2 max-h-80 overflow-auto rounded-lg bg-background p-3 text-sm leading-6 whitespace-pre-wrap">
                 {systemPrompt}
               </pre>
             </details>
           ) : (
-            <p className="mt-2 text-xs text-muted-foreground">Open a session to see the snapshot.</p>
+            <p className="mt-3 text-sm leading-6 text-muted-foreground">Open a session to see the snapshot.</p>
           )}
         </section>
       </div>
-        </>
+        </div>
       )}
     </aside>
   );
@@ -247,8 +247,8 @@ function MemoryEditor({
   return (
     <section>
       <div className="flex items-baseline justify-between gap-3">
-        <h3 className="text-xs tracking-[0.14em] text-muted-foreground uppercase">{title}</h3>
-        <span className="font-mono text-[11px] text-muted-foreground">
+        <h3 className="text-base font-medium tracking-tight">{title}</h3>
+        <span className="font-mono text-xs text-muted-foreground tabular-nums">
           {used}/{limit}
         </span>
       </div>
@@ -262,17 +262,17 @@ function MemoryEditor({
       >
         <div className={cn("h-full bg-copper", pct > 80 && "bg-destructive")} style={{ width: `${pct}%` }} />
       </div>
-      <p className="mt-2 text-xs leading-5 text-muted-foreground">{hint}</p>
-      <ul className="mt-2 space-y-2">
+      <p className="mt-2 text-sm leading-6">{hint}</p>
+      <ul className="mt-3 space-y-2">
         {(store?.entries ?? []).length === 0 ? (
-          <li className="text-xs text-muted-foreground">Empty.</li>
+          <li className="text-sm leading-6 text-muted-foreground">Empty.</li>
         ) : (
           store?.entries.map((entry) => (
-            <li key={entry} className="rounded-lg bg-background px-2.5 py-2 text-xs leading-5">
+            <li key={entry} className="rounded-lg bg-background px-3 py-2.5 text-sm leading-6">
               <p className="whitespace-pre-wrap">{entry}</p>
               <button
                 type="button"
-                className="mt-1 text-[11px] text-muted-foreground underline-offset-2 hover:underline"
+                className="mt-1.5 text-sm underline-offset-2 hover:underline"
                 onClick={() => void removeEntry(entry)}
               >
                 Remove
@@ -285,13 +285,13 @@ function MemoryEditor({
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
         placeholder="Add a fact the next session should already know"
-        className="mt-2 min-h-16 text-xs"
+        className="mt-3 min-h-16"
         aria-label={`Add to ${title}`}
       />
       <Button type="button" variant="outline" size="sm" className="mt-2" disabled={pending || !draft.trim()} onClick={() => void addEntry()}>
         Save entry
       </Button>
-      {error ? <p className="mt-2 text-xs text-destructive">{error}</p> : null}
+      {error ? <p className="mt-2 text-sm text-destructive">{error}</p> : null}
     </section>
   );
 }

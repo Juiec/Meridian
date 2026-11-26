@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronRight } from "lucide-react";
 
-import { MarkdownText } from "@/components/markdown-text";
+import { AssistantText } from "@/components/markdown-text";
 import { isQuestionPart, QuestionCard } from "@/components/question-card";
+import { LiveThinkingText } from "@/components/ui/binary-text";
 import { Button } from "@/components/ui/button";
 import { CONTEXT_CLEANED_PREFIX } from "@/lib/context-usage";
 import { groupMessages, type ToolPart, type TranscriptItem } from "@/lib/group-messages";
@@ -36,6 +37,7 @@ function resultImages(result?: string): ImageResultItem[] {
 export function Transcript({
   messages,
   live,
+  thinkingKey,
   compactedSummary,
   foldedThroughSeq = null,
   loading,
@@ -47,6 +49,7 @@ export function Transcript({
 }: {
   messages: StoredMessage[];
   live: { parts: LivePart[]; status: string } | null;
+  thinkingKey?: string;
   compactedSummary: string | null;
   foldedThroughSeq?: number | null;
   loading: boolean;
@@ -120,13 +123,13 @@ export function Transcript({
         {live && !liveIsOnlyQuestion ? (
           <article className="max-w-[46rem] space-y-3 text-[15px]" aria-live="polite">
             {live.parts.some((part) => part.kind === "reasoning") ? null : liveParts.length === 0 ? (
-              <Thinking text="" streaming detail={live.status} />
+              <Thinking text="" streaming detail={live.status} onceKey={thinkingKey} />
             ) : null}
             {liveParts.map((part, index) => {
               if (part.kind === "reasoning") {
-                return <Thinking key={`live-r-${index}`} text={part.text} streaming detail={live.status} />;
+                return <Thinking key={`live-r-${index}`} text={part.text} streaming detail={live.status} onceKey={thinkingKey} />;
               }
-              if (part.kind === "text") return <MarkdownText key={`live-t-${index}`} text={part.text} />;
+              if (part.kind === "text") return <AssistantText key={`live-t-${index}`} text={part.text} />;
               return (
                 <ToolOrQuestion
                   key={part.id || `live-tool-${index}`}
@@ -255,7 +258,7 @@ function TranscriptEntry({
       {item.reasoning ? <Thinking text={item.reasoning} /> : null}
       {parts.map((part, index) =>
         part.kind === "text" ? (
-          <MarkdownText key={`${item.id}-text-${index}`} text={part.text} />
+          <AssistantText key={`${item.id}-text-${index}`} text={part.text} />
         ) : (
           <ToolOrQuestion
             key={part.id || `${item.id}-tool-${index}`}
@@ -293,59 +296,55 @@ function Thinking({
   text,
   streaming = false,
   detail,
+  onceKey,
 }: {
   text: string;
   streaming?: boolean;
   detail?: string;
+  onceKey?: string;
 }) {
   const [open, setOpen] = useState(streaming);
   const steps = thinkingSteps(text);
   const cue = thinkingCue(detail);
   const body = steps.length > 0 ? steps : streaming && cue ? [cue] : [];
   return (
-    <div
-      className={cn(
-        "overflow-hidden rounded-xl border text-sm",
-        streaming ? "border-copper/50 bg-copper/10 text-foreground" : "border-border bg-card text-muted-foreground",
-      )}
-      aria-busy={streaming || undefined}
-    >
+    <div className="text-sm" aria-busy={streaming || undefined}>
       <button
         type="button"
-        className={cn("flex w-full items-center gap-2 px-3 py-2.5 text-left", streaming && !open && "think-shine")}
+        className="group flex w-full items-center gap-3 py-1 text-left"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        aria-label={open ? "Collapse thinking" : "Expand thinking"}
+        aria-label={open ? "Fold thinking" : "Show thinking"}
       >
         <span
-          className={cn("size-1.5 shrink-0 rounded-full", streaming ? "bg-copper" : "bg-muted-foreground")}
           aria-hidden
+          className={cn("h-px min-w-8 flex-1", streaming ? "bg-primary/50" : "bg-border", "group-hover:bg-primary/70")}
         />
-        <span className={cn("font-medium", streaming && "text-copper")}>Thinking</span>
-        {streaming && !open && cue ? (
-          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{cue}</span>
-        ) : (
-          <span className="flex-1" />
-        )}
-        <DisclosureChevron open={open} />
+        <span className="inline-flex shrink-0 items-center gap-2 text-muted-foreground">
+          <span
+            className={cn("size-1.5 rounded-full", streaming ? "bg-primary" : "bg-muted-foreground/70")}
+            aria-hidden
+          />
+          {streaming ? <LiveThinkingText onceKey={onceKey} /> : <span>Thinking</span>}
+        </span>
+        <span
+          aria-hidden
+          className={cn("h-px min-w-8 flex-1", streaming ? "bg-primary/50" : "bg-border", "group-hover:bg-primary/70")}
+        />
       </button>
       {open && body.length > 0 ? (
-        <ol className="space-y-1 px-3 pb-3">
+        <div
+          className="cursor-pointer space-y-2 px-6 pt-1 pb-1 text-[13px] leading-6 text-muted-foreground"
+          onClick={(event) => {
+            const selection = window.getSelection();
+            if (selection && !selection.isCollapsed && event.currentTarget.contains(selection.anchorNode)) return;
+            setOpen(false);
+          }}
+        >
           {body.map((step, index) => (
-            <li
-              key={index}
-              className={cn(
-                "leading-6 whitespace-pre-wrap",
-                streaming
-                  ? "think-shine rounded-lg bg-background/70 px-2.5 py-1.5 text-foreground"
-                  : "text-muted-foreground",
-              )}
-              style={streaming ? { animationDelay: `${index * 0.18}s` } : undefined}
-            >
-              {step}
-            </li>
+            <p key={index} className="whitespace-pre-wrap">{step}</p>
           ))}
-        </ol>
+        </div>
       ) : null}
     </div>
   );
@@ -501,7 +500,7 @@ function DelegateResult({ result }: { result?: string }) {
     <div className="border-t border-border px-3 py-3 text-sm leading-6">
       <p className="text-[11px] tracking-wide text-muted-foreground uppercase">{view.title}</p>
       <div className="mt-1">
-        <MarkdownText text={view.text} />
+        <AssistantText text={view.text} />
       </div>
       {view.tools.length > 0 ? (
         <p className="mt-2 text-[11px] text-muted-foreground">
@@ -534,8 +533,20 @@ function imagePending(result?: string): { prompt: string; endpointName: string; 
   }
 }
 
+function argumentHint(raw: string): string {
+  if (!raw.trim()) return "";
+  try {
+    const parsed = JSON.parse(raw) as { path?: unknown; command?: unknown };
+    if (typeof parsed.path === "string" && parsed.path.trim()) return parsed.path.trim();
+    if (typeof parsed.command === "string" && parsed.command.trim()) return parsed.command.trim().slice(0, 120);
+  } catch {
+    return "";
+  }
+  return "";
+}
+
 function toolSummary(part: ToolPart): string {
-  if (part.pending) return part.status || "Waiting for the tool to finish";
+  if (part.pending) return argumentHint(part.arguments) || part.status || "Waiting for the tool to finish";
   if (!part.result) return part.ok === false ? "The tool failed" : "Finished";
   try {
     const parsed = JSON.parse(part.result) as {
@@ -543,6 +554,8 @@ function toolSummary(part: ToolPart): string {
       error?: string;
       usage?: string;
       name?: string;
+      path?: string;
+      bytes?: number;
       url?: string;
       utc?: string;
       text?: string;
@@ -551,6 +564,9 @@ function toolSummary(part: ToolPart): string {
     if (typeof parsed.text === "string" && parsed.text.trim()) return parsed.text.trim().slice(0, 140);
     if (typeof parsed.message === "string") {
       return parsed.usage ? `${parsed.message} ${parsed.usage}` : parsed.message;
+    }
+    if (typeof parsed.path === "string" && parsed.path) {
+      return typeof parsed.bytes === "number" ? `${parsed.path} · ${parsed.bytes} bytes` : parsed.path;
     }
     if (typeof parsed.utc === "string") return parsed.utc;
     if (typeof parsed.url === "string") return parsed.url;

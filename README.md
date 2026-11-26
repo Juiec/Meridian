@@ -68,7 +68,17 @@ The same values can come from the environment until you save. A saved profile wi
 
 ## Skills
 
-Skills are directories under `skills/` with a `SKILL.md` file:
+Skills use the Agent Skills layout, the same folder shape most harnesses install. Each one is a directory with `SKILL.md`, and it may also have `references/`, `scripts/`, and `assets/`. Meridian reads three places. The same name in an earlier place wins.
+
+| Place | Path |
+| --- | --- |
+| This install | `.agents/skills/` |
+| An older checkout | `skills/` — still read. Saving that skill moves it into `.agents/skills/` |
+| Your user, every install on this machine | `~/.agents/skills/` |
+
+`npm run dev` sees the user folder. The Compose container does not, unless you mount it, for example `~/.agents/skills:/root/.agents/skills:ro`.
+
+A skill file looks like this:
 
 ```markdown
 ---
@@ -83,7 +93,9 @@ Steps the model should follow after skill_view, or after /my-skill.
 
 Names are lowercase letters, numbers, and single hyphens. A missing description means the skill is skipped.
 
-At session start Meridian injects only an index: name, description, and path. The model loads the body with the `skill_view` tool, and a reference file with `skill_view` plus `path` (for example `references/source-rubric.md`). `list_skills` reports the live directory. Set `disable-model-invocation: true` to hide a skill from the index while still allowing `/name`.
+At session start Meridian injects only an index: name, description, and path. The model loads the body with the `skill_view` tool, and a reference file with `skill_view` plus `path` (for example `references/source-rubric.md`). `list_skills` reports the live directory. Set `disable-model-invocation: true` to hide a skill from the index while still allowing `/name`. Other harnesses ignore that field.
+
+Copy a skill folder into `~/.agents/skills/<name>/` to install it for this machine. That is the same global folder other harnesses use, so one copy is available in Meridian and in those tools. The desk can open a global skill. Saving writes a copy under `.agents/skills/` that overrides the global one. The desk does not delete the global folder.
 
 Shipped skills:
 
@@ -100,7 +112,9 @@ Shipped skills:
 | `itinerary-day` | They want a day-by-day plan from the pinned map |
 | `travel-research` | They want fares, weather, or entry notes looked up rather than invented |
 
-The desk can create, edit, and delete skills without a restart. A new skill needs a name (`lowercase-words`), a description of 1024 characters or fewer, and a body of 20,000 characters or fewer. Optional references live in `references/` as `notes.md` or `notes.txt`. `disable-model-invocation` hides a skill from the index while `/name` can still load it. Saving or adding a skill file refreshes the index in existing chats on the next message. You can also add a skill by creating `skills/your-name/SKILL.md` on disk. The desk inserts `/your-name` into the composer. Names `ask`, `plan`, and `agent` are reserved for chat modes, so a skill should not use them.
+`create-skill` is installed and left out of that index. It loads when the user asks to create or edit a skill, or types `/create-skill`. It saves with `skill_write`. It does not offer to make a skill on its own.
+
+The desk can create, edit, and delete skills without a restart. A new skill needs a name (`lowercase-words`), a description of 1024 characters or fewer, and a body of 20,000 characters or fewer. Optional references live in `references/` as `notes.md` or `notes.txt`. `disable-model-invocation` hides a skill from the index while `/name` can still load it. Saving or adding a skill file refreshes the index in existing chats on the next message. You can also add a skill by creating `.agents/skills/your-name/SKILL.md` on disk. The desk inserts `/your-name` into the composer. Names `ask`, `plan`, and `agent` are reserved for chat modes, so a skill should not use them.
 
 ## Memory
 
@@ -126,7 +140,7 @@ The desk edits two more files. They are not injected mid-session until the promp
 | `agent/SOUL.md` | Stable identity | 6,000 characters |
 | `agent/AGENTS.md` | Context instructions for this app | 8,000 characters |
 
-A save that would pass the limit returns an error and leaves the file unchanged. The root `AGENTS.md` is Next.js guidance for coding agents and is not this file.
+A save that would pass the limit returns an error and leaves the file unchanged.
 
 ## Tools
 
@@ -205,19 +219,19 @@ Hermes and Pi ideas, and where they live here:
 | Idea | In Meridian |
 | --- | --- |
 | Prompt tiers: stable → context → volatile | `lib/prompt.ts`. Stable is `agent/SOUL.md` plus tool guidance. Context is `agent/AGENTS.md`. Volatile is the skills index, MEMORY and USER snapshots, and the timestamp. |
-| Skills index, body on demand | `lib/skills.ts` and `lib/skill-store.ts`. `skill_view` / `list_skills` in `lib/tools.ts`. `/name` in `lib/skill-command.ts` and `lib/agent.ts` |
+| Skills index, body on demand | `lib/skills.ts` and `lib/skill-store.ts`. `skill_view` / `list_skills` / `skill_write` in `lib/tools.ts`. `/name` in `lib/skill-command.ts` and `lib/agent.ts` |
 | Frozen memory snapshot, char-limit errors | `lib/memory.ts`. Snapshot text is rendered in `renderMemorySnapshot` and stored on the session row. |
 | Agent loop: stream, tools, append, repeat | `lib/agent.ts`. OpenAI-compatible streaming client in `lib/lmstudio.ts`, with short retries on 408/429/5xx and network blips (`lib/retry.ts`). |
 | Subagent with a fresh context | `delegate` in `lib/subagent.ts`. `lib/context-summary.ts` builds the brief and compacts the child when its own tool output grows. |
 | Compaction that keeps the original transcript | `lib/compact.ts`. Summary and boundary seq are columns on the session. Messages stay in SQLite. |
 | Session tree / persistence | `lib/sessions.ts` and `lib/db.ts` (`node:sqlite`). This version stores a single active branch per chat, not Pi’s full message tree. Generated images get an `images` row plus a file in `data/images` (`lib/image-store.ts`, `lib/image-generator.ts`). |
 | Server-side tools only | `app/api/chat/route.ts` runs the loop. `fetch_url` (`lib/fetch-url.ts`, `lib/net.ts`) refuses loopback, private, link-local, Tailscale CGNAT, and encoded or leading-zero numeric hosts. |
-| MCP client and custom tools | `lib/mcp-runtime.ts` connects stdio, streamable HTTP, and SSE. `lib/custom-tools.ts` calls webhooks. `lib/tool-registry.ts` merges them with built-ins without letting either replace `memory`, `skill_view`, `list_skills`, `fetch_url`, `current_time`, or `travel_*`. |
+| MCP client and custom tools | `lib/mcp-runtime.ts` connects stdio, streamable HTTP, and SSE. `lib/custom-tools.ts` calls webhooks. `lib/tool-registry.ts` merges them with built-ins without letting either replace `memory`, `skill_view`, `list_skills`, `skill_write`, `fetch_url`, `current_time`, or `travel_*`. |
 | Travel lookups and the trip map | `lib/travel.ts` calls Open-Meteo, Nominatim, and OSRM. `lib/travel-math.ts` is the haversine and illustrative fare math. `lib/travel-store.ts` stores the plan and price URL. `components/travel-screen.tsx` and `components/trip-map.tsx` are the page and Leaflet map. |
 
-`agent/AGENTS.md` is the model’s project context. The `AGENTS.md` at the repo root is Next.js guidance for coding agents and is not injected into the prompt.
+`agent/AGENTS.md` is the model’s project context.
 
-Built-in tools: `memory`, `skill_view`, `list_skills`, `delegate`, `fetch_url`, `current_time`, `image_generate`, `travel_geocode`, `travel_weather`, `travel_places`, `travel_route`, `travel_prices`, and `travel_plan`. MCP and custom tools are added beside them at request time. `delegate` (`lib/subagent.ts`, `lib/context-summary.ts`) runs a child session whose prompt is the task plus a bounded summary. The parent tool result is that answer, not the child transcript. Child sessions use purpose `subagent` and stay out of the chat list. Deleting the parent chat deletes them.
+Built-in tools: `memory`, `skill_view`, `list_skills`, `skill_write`, `delegate`, `fetch_url`, `current_time`, `image_generate`, `travel_geocode`, `travel_weather`, `travel_places`, `travel_route`, `travel_prices`, and `travel_plan`. MCP and custom tools are added beside them at request time. `delegate` (`lib/subagent.ts`, `lib/context-summary.ts`) runs a child session whose prompt is the task plus a bounded summary. The parent tool result is that answer, not the child transcript. Child sessions use purpose `subagent` and stay out of the chat list. Deleting the parent chat deletes them.
 
 ## Docker
 
@@ -228,7 +242,7 @@ docker compose up --build
 
 Set `TS_AUTHKEY` in `.env` before that first start. [Install Tailscale](#install-tailscale) is the full procedure.
 
-The app listens on port **43123**. SQLite, `data/endpoints.json`, and `data/secrets/endpoints.json` live in the `meridian-data` volume. `skills/` and `agent/` are mounted from this directory, so desk edits and files you add on the host are the same tree. Compose reads `.env` for the bootstrap variables and the auth key. Copy `.env.example` to `.env.local` for `npm run dev`. Saved profiles replace the LM Studio variables.
+The app listens on port **43123**. SQLite, `data/endpoints.json`, and `data/secrets/endpoints.json` live in the `meridian-data` volume. `.agents/skills/` and `agent/` are mounted from this directory, so desk edits and files you add on the host are the same tree. Compose reads `.env` for the bootstrap variables and the auth key. Copy `.env.example` to `.env.local` for `npm run dev`. Saved profiles replace the LM Studio variables.
 
 ### Install Tailscale
 

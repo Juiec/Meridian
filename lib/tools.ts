@@ -2,9 +2,11 @@ import { fetchPublicUrl } from "@/lib/fetch-url";
 import { validSize } from "@/lib/image-generator";
 import { ImageSettingsError, resolveImageTarget } from "@/lib/image-settings";
 import { applyMemory, MEMORY_LIMITS, type MemoryOp, type MemoryTarget } from "@/lib/memory";
+import { createSkill, readSkillSource, updateSkill } from "@/lib/skill-store";
 import { discoverSkills, readSkillFile } from "@/lib/skills";
 import { fileSessionAsTrip, getSession } from "@/lib/sessions";
 import { executeTravelTool } from "@/lib/travel";
+import { executeWorkspaceTool } from "@/lib/workspace";
 
 export type ToolDefinition = {
   type: "function";
@@ -79,6 +81,48 @@ export const TOOLS: ToolDefinition[] = [
       description:
         "List installed skills with name, description, and path. The index is already in the system prompt; use this to confirm the live disk state.",
       parameters: { type: "object", additionalProperties: false, properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "skill_write",
+      description:
+        "Create or replace a skill. Call only when the user explicitly asked to create, edit, or change a skill. Do not call it because a task seems repeatable, and do not suggest a skill they did not ask for.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          name: { type: "string", description: "Skill name: lowercase words and single hyphens, 64 characters or fewer." },
+          description: {
+            type: "string",
+            description: "What the skill does and the situation that should load it. 1024 characters or fewer.",
+          },
+          body: { type: "string", description: "The procedure, without frontmatter. 20000 characters or fewer." },
+          previousName: {
+            type: "string",
+            description: "Existing name, only when the user asked to rename the skill.",
+          },
+          disableModelInvocation: {
+            type: "boolean",
+            description: "True only when the user wants the skill hidden from the index and loaded by /name.",
+          },
+          references: {
+            type: "array",
+            description: "Optional references/ files. On an edit, omit this to keep the current files.",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                name: { type: "string", description: "File name such as notes.md or notes.txt." },
+                content: { type: "string" },
+              },
+              required: ["name", "content"],
+            },
+          },
+        },
+        required: ["name", "description", "body"],
+      },
     },
   },
   {
@@ -266,6 +310,70 @@ export const TOOLS: ToolDefinition[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "workspace_list",
+      description:
+        "List files and folders in the project this chat is bound to. Paths are relative to that project. Omit path to list the top. Refuses paths outside the project.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          path: { type: "string", description: "Optional folder inside the project, such as src or a cloned repository name." },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "workspace_read",
+      description:
+        "Read a text file inside the bound project. Refuses secrets, binary files, and paths outside the project.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          path: { type: "string", description: "Relative path, such as README.md or repo/src/app.ts." },
+        },
+        required: ["path"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "workspace_write",
+      description:
+        "Create or replace a text file inside the bound project. Parent folders are created. Refuses secrets and paths outside the project. Does not run the file.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          path: { type: "string" },
+          content: { type: "string" },
+        },
+        required: ["path", "content"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "workspace_run",
+      description:
+        "Run a shell command in the bound project folder, such as a test or a build. Output is capped and the command stops after 60 seconds. The command starts in the project folder.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          command: { type: "string", description: "Command to run, such as npm test." },
+        },
+        required: ["command"],
+      },
+    },
+  },
 ];
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -311,6 +419,65 @@ export type ToolContext = {
   mode?: "agent" | "ask" | "plan";
   delegate?: (rawArgs: string) => Promise<Record<string, unknown>>;
 };
+
+const RESERVED_SKILL_NAMES = new Set(["ask", "plan", "agent"]);
+
+function writeSkill(args: Record<string, unknown>): Record<string, unknown> {
+  const name = typeof args.name === "string" ? args.name.trim() : "";
+  if (!name) return { ok: false, error: "skill_write requires name." };
+  if (RESERVED_SKILL_NAMES.has(name)) return { ok: false, error: `"${name}" is reserved for a chat mode.` };
+  const previousName = typeof args.previousName === "string" ? args.previousName.trim() : "";
+  if (previousName && RESERVED_SKILL_NAMES.has(previousName)) {
+    return { ok: false, error: `"${previousName}" is reserved for a chat mode.` };
+  }
+  const target = previousName || name;
+  if (name === "create-skill" && target !== "create-skill") {
+    return { ok: false, error: "create-skill cannot be replaced by another skill." };
+  }
+  const existing = discoverSkills().skills.find((skill) => skill.name === target);
+  let current: ReturnType<typeof readSkillSource> | null = null;
+  if (existing) {
+    try {
+      current = readSkillSource(target);
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : "Could not read the skill." };
+    }
+  } else if (previousName) {
+    return { ok: false, error: `No skill named "${previousName}".` };
+  }
+  const description = typeof args.description === "string" ? args.description : (current?.description ?? "");
+  const body = typeof args.body === "string" ? args.body : (current?.body ?? "");
+  let disableModelInvocation = current?.disableModelInvocation ?? false;
+  if (typeof args.disableModelInvocation === "boolean") disableModelInvocation = args.disableModelInvocation;
+  if (name === "create-skill" && args.disableModelInvocation !== false) disableModelInvocation = true;
+  let references = current?.references ?? [];
+  if (Array.isArray(args.references)) {
+    references = [];
+    for (const item of args.references) {
+      if (!item || typeof item !== "object") return { ok: false, error: "Each reference must be an object." };
+      const record = item as Record<string, unknown>;
+      references.push({
+        name: typeof record.name === "string" ? record.name.trim() : "",
+        content: typeof record.content === "string" ? record.content : "",
+      });
+    }
+  }
+  const draft = { name, description, body, disableModelInvocation, references };
+  try {
+    const saved = existing ? updateSkill(target, draft) : createSkill(draft);
+    return {
+      ok: true,
+      action: existing ? "updated" : "created",
+      name: saved.name,
+      description: saved.description,
+      path: saved.path,
+      disableModelInvocation: saved.disableModelInvocation,
+      files: saved.files,
+    };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Could not write the skill." };
+  }
+}
 
 export async function executeTool(
   name: string,
@@ -364,6 +531,8 @@ export async function executeTool(
     };
   }
 
+  if (name === "skill_write") return writeSkill(args);
+
   if (name === "fetch_url") {
     const url = typeof args.url === "string" ? args.url : "";
     if (!url) return { ok: false, error: "fetch_url requires url." };
@@ -402,6 +571,10 @@ export async function executeTool(
         error: error instanceof ImageSettingsError || error instanceof Error ? error.message : "Image generation failed.",
       };
     }
+  }
+
+  if (name.startsWith("workspace_")) {
+    return executeWorkspaceTool(name, args, context.sessionId);
   }
 
   if (name === "current_time") {

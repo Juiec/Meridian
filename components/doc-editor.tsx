@@ -61,7 +61,7 @@ export function DocEditor() {
   }
 
   if (!loaded && !error) {
-    return <p className="text-xs text-muted-foreground">Loading identity…</p>;
+    return <p className="text-sm leading-6 text-muted-foreground">Loading identity…</p>;
   }
 
   return (
@@ -84,8 +84,8 @@ export function DocEditor() {
         onChange={setAgents}
         onSave={() => void save("agents")}
       />
-      {message ? <p className="text-xs text-sage">{message}</p> : null}
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+      {message ? <p className="text-sm leading-6 text-sage">{message}</p> : null}
+      {error ? <p className="text-sm leading-6 text-destructive">{error}</p> : null}
     </div>
   );
 }
@@ -111,17 +111,17 @@ function Field({
   return (
     <section>
       <div className="flex items-baseline justify-between gap-3">
-        <h3 className="text-xs tracking-[0.14em] text-muted-foreground uppercase">{title}</h3>
-        <span className={cn("font-mono text-[11px]", over ? "text-destructive" : "text-muted-foreground")}>
+        <h3 className="text-base font-medium tracking-tight">{title}</h3>
+        <span className={cn("font-mono text-xs tabular-nums", over ? "text-destructive" : "text-muted-foreground")}>
           {value.length}/{limit}
         </span>
       </div>
-      <p className="mt-1 text-xs leading-5 text-muted-foreground">{hint}</p>
+      <p className="mt-2 text-sm leading-6">{hint}</p>
       <Textarea
         value={value}
         onChange={(event) => onChange(event.target.value)}
         aria-label={title}
-        className="mt-2 min-h-28 font-mono text-[11px]"
+        className="mt-3 min-h-28 font-mono text-sm leading-6"
       />
       <Button type="button" variant="outline" size="sm" className="mt-2" disabled={pending || over} onClick={onSave}>
         {pending ? "Saving…" : "Save"}

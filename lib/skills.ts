@@ -1,14 +1,18 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
 
-import { skillsDir } from "@/lib/paths";
+import { globalSkillDirs, legacySkillsDir, skillsDir } from "@/lib/paths";
+
+export type SkillOrigin = "project" | "legacy" | "global";
 
 export type SkillMeta = {
   name: string;
   description: string;
   dir: string;
   rel: string;
+  origin: SkillOrigin;
   disableModelInvocation: boolean;
   files: string[];
 };
@@ -65,9 +69,23 @@ function listFiles(dir: string, base = dir): string[] {
   return out.sort();
 }
 
-function loadSkill(dir: string, root: string): { skill?: SkillMeta & { body: string }; skipped?: SkippedSkill } {
+type SkillRoot = { dir: string; label: string; origin: SkillOrigin };
+
+function implicitInvocationDisabled(dir: string): boolean {
+  // Optional file some harnesses add. Meridian does not write it.
+  const file = path.join(dir, "agents", "openai.yaml");
+  if (!existsSync(file)) return false;
+  try {
+    const text = readFileSync(file, "utf8");
+    return /^\s*allow_implicit_invocation:\s*["']?false["']?\s*(?:#.*)?$/m.test(text);
+  } catch {
+    return false;
+  }
+}
+
+function loadSkill(dir: string, root: SkillRoot): { skill?: SkillMeta & { body: string }; skipped?: SkippedSkill } {
   const file = path.join(dir, "SKILL.md");
-  const rel = path.relative(root, dir).split(path.sep).join("/") || path.basename(dir);
+  const rel = path.relative(root.dir, dir).split(path.sep).join("/") || path.basename(dir);
   let raw = "";
   try {
     raw = readFileSync(file, "utf8");
@@ -97,44 +115,78 @@ function loadSkill(dir: string, root: string): { skill?: SkillMeta & { body: str
       name,
       description,
       dir,
-      rel: `skills/${rel}`,
-      disableModelInvocation: parsed.data["disable-model-invocation"] === true,
+      rel: `${root.label}/${rel}`,
+      origin: root.origin,
+      disableModelInvocation:
+        parsed.data["disable-model-invocation"] === true || implicitInvocationDisabled(dir),
       files: listFiles(dir),
       body: parsed.body.trim(),
     },
   };
 }
 
-function walk(dir: string, root: string, found: Array<SkillMeta & { body: string }>, skipped: SkippedSkill[]) {
-  if (!existsSync(dir)) return;
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
-    const child = path.join(dir, entry.name);
-    if (existsSync(path.join(child, "SKILL.md"))) {
-      const loaded = loadSkill(child, root);
-      if (loaded.skill) found.push(loaded.skill);
-      if (loaded.skipped) skipped.push(loaded.skipped);
-    } else {
-      walk(child, root, found, skipped);
+function walk(root: SkillRoot, found: Array<SkillMeta & { body: string }>, skipped: SkippedSkill[]) {
+  if (!existsSync(root.dir)) return;
+  const visit = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+      const child = path.join(dir, entry.name);
+      if (existsSync(path.join(child, "SKILL.md"))) {
+        const loaded = loadSkill(child, root);
+        if (loaded.skill) found.push(loaded.skill);
+        if (loaded.skipped) skipped.push(loaded.skipped);
+      } else {
+        visit(child);
+      }
     }
-  }
+  };
+  visit(root.dir);
 }
 
-export function discoverSkills(root = skillsDir()): { skills: LoadedSkill[]; skipped: SkippedSkill[] } {
+function globalLabel(dir: string): string {
+  const norm = path.resolve(dir).split(path.sep).join("/");
+  const home = path.resolve(homedir()).split(path.sep).join("/");
+  if (norm === `${home}/.agents/skills`) return "~/.agents/skills";
+  return norm;
+}
+
+function skillSearchRoots(): SkillRoot[] {
+  const roots: SkillRoot[] = [
+    { dir: skillsDir(), label: ".agents/skills", origin: "project" },
+    { dir: legacySkillsDir(), label: "skills", origin: "legacy" },
+    ...globalSkillDirs().map((dir) => ({ dir, label: globalLabel(dir), origin: "global" as const })),
+  ];
+  const seen = new Set<string>();
+  return roots.filter((root) => {
+    const key = path.resolve(root.dir).toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export function discoverSkills(root?: string): { skills: LoadedSkill[]; skipped: SkippedSkill[] } {
+  const roots: SkillRoot[] = root
+    ? [{ dir: root, label: "skills", origin: "project" }]
+    : skillSearchRoots();
   const found: LoadedSkill[] = [];
   const skipped: SkippedSkill[] = [];
-  walk(root, root, found, skipped);
-  found.sort((a, b) => a.name.localeCompare(b.name));
-  const seen = new Set<string>();
+  for (const entry of roots) walk(entry, found, skipped);
+  const seen = new Map<string, LoadedSkill>();
   const skills: LoadedSkill[] = [];
   for (const skill of found) {
-    if (seen.has(skill.name)) {
-      skipped.push({ path: skill.rel, reason: `Duplicate skill name "${skill.name}" ignored.` });
+    const winner = seen.get(skill.name);
+    if (winner) {
+      skipped.push({
+        path: skill.rel,
+        reason: `Duplicate skill name "${skill.name}" ignored. "${winner.rel}" is used.`,
+      });
       continue;
     }
-    seen.add(skill.name);
+    seen.set(skill.name, skill);
     skills.push(skill);
   }
+  skills.sort((a, b) => a.name.localeCompare(b.name));
   return { skills, skipped };
 }
 

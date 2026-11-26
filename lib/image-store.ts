@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileS
 import path from "node:path";
 
 import { db } from "@/lib/db";
+import { batchFileStamp, batchImageBaseName } from "@/lib/image-names";
 import { imagesDir } from "@/lib/paths";
 
 const ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -99,6 +100,32 @@ function writeBytesAtomic(file: string, bytes: Buffer) {
   renameSync(tmp, file);
 }
 
+const STORED_EXTENSIONS = ["png", "jpg", "webp", "gif", "bin"] as const;
+
+function batchSlotTaken(stamp: string, index: number): boolean {
+  const base = batchImageBaseName(stamp, index);
+  return STORED_EXTENSIONS.some((ext) => existsSync(path.join(imagesDir(), `${base}.${ext}`)));
+}
+
+/** One stamp for a batch. If that second is already used, take the next free second. */
+export function reserveBatchStamp(count: number, now = new Date()): string {
+  const slots = Math.min(100, Math.max(1, Math.floor(count)));
+  let cursor = now.getTime();
+  for (let attempt = 0; attempt < 120; attempt++) {
+    const stamp = batchFileStamp(new Date(cursor));
+    let free = true;
+    for (let index = 0; index < slots; index++) {
+      if (batchSlotTaken(stamp, index)) {
+        free = false;
+        break;
+      }
+    }
+    if (free) return stamp;
+    cursor += 1000;
+  }
+  return batchFileStamp(new Date(cursor));
+}
+
 export function insertGeneratedImage(input: {
   bytes: Buffer | null;
   mediaType: string;
@@ -111,9 +138,13 @@ export function insertGeneratedImage(input: {
   toolCallId?: string | null;
   source?: "generate" | "edit";
   sourceUrl?: string | null;
+  batchStamp?: string;
+  batchIndex?: number;
 }): GeneratedImage {
   const id = crypto.randomUUID();
-  const fileName = input.bytes && input.bytes.length > 0 ? `${id}.${imageExtension(input.mediaType)}` : null;
+  const fileName = input.bytes && input.bytes.length > 0
+    ? `${batchImageBaseName(input.batchStamp ?? reserveBatchStamp(1), input.batchIndex ?? 0)}.${imageExtension(input.mediaType)}`
+    : null;
   if (fileName && input.bytes) writeBytesAtomic(path.join(imagesDir(), fileName), input.bytes);
   const now = Date.now();
   db()

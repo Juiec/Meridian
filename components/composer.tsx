@@ -4,6 +4,7 @@ import { ArrowUp, Paperclip, RotateCcw, Square, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { LiveThinkingText } from "@/components/ui/binary-text";
 import { Textarea } from "@/components/ui/textarea";
 import type { ChatMode } from "@/lib/chat-mode";
 import { modeLabel } from "@/lib/chat-mode";
@@ -49,6 +50,7 @@ export function Composer({
   canRetry,
   running,
   status,
+  thinkingKey,
   disabledReason,
   awaitingQuestion = false,
   chatMode,
@@ -67,6 +69,7 @@ export function Composer({
   canRetry: boolean;
   running: boolean;
   status: string | null;
+  thinkingKey?: string;
   disabledReason: string | null;
   awaitingQuestion?: boolean;
   chatMode: ChatMode;
@@ -346,9 +349,13 @@ export function Composer({
                 ))}
               </div>
               <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground" aria-live="polite">
-                {status ||
+                {status === "Thinking" ? (
+                  <LiveThinkingText onceKey={thinkingKey} />
+                ) : (
+                  status ||
                   disabledReason ||
-                  (running ? "Steering keeps the turn. Stop ends it." : "Enter to send · Shift+Enter for a new line")}
+                  (running ? "Steering keeps the turn. Stop ends it." : "Enter to send · Shift+Enter for a new line")
+                )}
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-1">

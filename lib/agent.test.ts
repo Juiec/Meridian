@@ -133,6 +133,38 @@ describe("agent loop", () => {
     expect(second.messages.some((message) => message.role === "tool" && String(message.content).includes("Prefers short answers."))).toBe(true);
   });
 
+  it("runs a Qwen XML tool call written in the reply", async () => {
+    const session = createSession();
+    const events: AgentEvent[] = [];
+    await runTurn({
+      sessionId: session.id,
+      content: "What time is it?",
+      emit: (event) => events.push(event),
+      complete: scripted((_request, call) => {
+        if (call === 1) {
+          return [
+            {
+              type: "text",
+              text: "Checking the clock.\n\n<tool_call>\n<function=current_time>\n</function>\n</tool_call>",
+            },
+            { type: "finish", reason: "stop" },
+          ];
+        }
+        return [
+          { type: "text", text: "It is time." },
+          { type: "finish", reason: "stop" },
+        ];
+      }),
+    });
+
+    expect(events.some((event) => event.type === "tool_call" && event.call.name === "current_time" && event.call.arguments === "{}")).toBe(true);
+    expect(events.some((event) => event.type === "tool_result" && event.ok)).toBe(true);
+    const assistant = listMessages(session.id).filter((message) => message.role === "assistant");
+    expect(assistant[0]?.content).toBe("Checking the clock.");
+    expect(assistant[0]?.content).not.toContain("<tool_call>");
+    expect(assistant[0]?.toolCalls?.[0]?.name).toBe("current_time");
+  });
+
   it("inlines /name without storing the body as the user message", async () => {
     const session = createSession();
     let seenUser = "";

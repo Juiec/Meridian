@@ -13,7 +13,10 @@ import {
   updateSession,
   visibleMessages,
 } from "@/lib/sessions";
+import { getProject } from "@/lib/projects";
+import { resolveTurnCalls } from "@/lib/text-tool-calls";
 import { parseToolArguments, TOOLS, type ToolDefinition } from "@/lib/tools";
+import { workspaceInstructions } from "@/lib/workspace";
 import type { ToolRoute } from "@/lib/tool-registry";
 import type { StoredMessage, ToolCallRecord } from "@/lib/types";
 
@@ -70,7 +73,7 @@ export function subagentSystemPrompt(input: {
     "# Context summary",
     input.summary,
     "# How to work",
-    "Use tools when you need data the summary does not contain. Load a skill with skill_view only when one index entry matches. Do not invent facts. Do not delegate. Do not write memory unless the task tells you to save a lasting fact. travel_plan changes the shared trip map. When you finish, reply with the result itself: what you found or did, the useful details, and anything unfinished. Do not narrate tool calls.",
+    "Use tools when you need data the summary does not contain. Load a skill with skill_view only when one index entry matches. Do not invent facts. Do not delegate. Do not create or edit skills. Do not write memory unless the task tells you to save a lasting fact. travel_plan changes the shared trip map. When you finish, reply with the result itself: what you found or did, the useful details, and anything unfinished. Do not narrate tool calls.",
     backgroundBlocks.length > 0 ? `# Background\n\n${backgroundBlocks.join("\n\n")}` : "",
     "# Skills index",
     "Descriptions are routing hints. Load a body with skill_view before following a procedure.",
@@ -82,7 +85,7 @@ export function subagentSystemPrompt(input: {
 }
 
 function withoutDelegate(definitions: ToolDefinition[]): ToolDefinition[] {
-  return definitions.filter((tool) => tool.function.name !== "delegate");
+  return definitions.filter((tool) => tool.function.name !== "delegate" && tool.function.name !== "skill_write");
 }
 
 type Acc = { id: string; name: string; arguments: string };
@@ -201,13 +204,17 @@ export async function runSubagent(input: {
     compactedSummary: parent.compactedSummary,
     messages: visibleMessages(parent),
   });
-  const prompt = subagentSystemPrompt({ task: request.task, summary, now: new Date() });
+  const project = parent.projectId ? getProject(parent.projectId) : null;
+  const prompt = [subagentSystemPrompt({ task: request.task, summary, now: new Date() }), workspaceInstructions(project)]
+    .filter(Boolean)
+    .join("\n\n");
   const child = createSubagentSession({
     parentId: parent.id,
     title: request.title,
     endpointId: parent.endpointId,
     model,
     systemPrompt: prompt,
+    projectId: parent.projectId,
   });
   insertMessage({
     sessionId: child.id,
@@ -303,7 +310,9 @@ export async function runSubagent(input: {
         return { ok: false, error: "Stopped before the subagent finished.", title: request.title, sessionId: child.id };
       }
 
-      const toolCalls = forceText ? [] : finishedCalls(acc, pass);
+      const resolved = resolveTurnCalls(text, forceText ? [] : finishedCalls(acc, pass), pass, !forceText);
+      text = resolved.prose;
+      const toolCalls = resolved.calls;
       const spoken = text.trim() || (toolCalls.length === 0 ? reasoning.trim() : "");
       if (spoken || toolCalls.length > 0) {
         insertMessage({

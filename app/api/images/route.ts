@@ -102,7 +102,10 @@ export async function POST(request: Request) {
       },
       request.signal,
     );
-    const data: GeneratedImagePayload[] = result.data;
+    const data: GeneratedImagePayload[] = result.data.map((item, index) => ({
+      ...item,
+      fileName: result.images[index]?.fileName ?? null,
+    }));
     return Response.json({ data });
   } catch (error) {
     if (error instanceof ImageRequestError) return jsonError(error.message, error.status);

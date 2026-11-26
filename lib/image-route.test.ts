@@ -46,7 +46,10 @@ describe("image generation route", () => {
     }));
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ data: [{ b64_json: "image-data" }] });
+    const payload = await response.json() as { data: Array<{ b64_json?: string; fileName?: string | null }> };
+    expect(payload.data).toHaveLength(1);
+    expect(payload.data[0]?.b64_json).toBe("image-data");
+    expect(payload.data[0]?.fileName).toMatch(/^meridian_\d{12}0\.png$/);
     expect(upstream).toHaveBeenCalledOnce();
     const [url, init] = upstream.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("https://images.example/v1/images/generations");

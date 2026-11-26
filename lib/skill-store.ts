@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } fr
 import path from "node:path";
 
 import { writeAtomic } from "@/lib/atomic";
-import { skillsDir } from "@/lib/paths";
+import { legacySkillsDir, skillsDir } from "@/lib/paths";
 import { discoverSkills, splitFrontmatter } from "@/lib/skills";
 
 const NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -78,13 +78,32 @@ function validateDraft(draft: SkillDraft) {
   }
 }
 
-function existingDir(name: string): string | null {
-  const { skills } = discoverSkills();
-  return skills.find((skill) => skill.name === name)?.dir ?? null;
+function skillFile(dir: string): boolean {
+  return existsSync(path.join(dir, "SKILL.md"));
+}
+
+function namedDir(root: string, name: string): string | null {
+  assertName(name);
+  const dir = path.resolve(root, name);
+  if (dir !== path.join(path.resolve(root), name)) return null;
+  return skillFile(dir) ? dir : null;
+}
+
+function projectSkillDir(name: string): string | null {
+  return namedDir(skillsDir(), name);
+}
+
+function legacySkillDir(name: string): string | null {
+  return namedDir(legacySkillsDir(), name);
+}
+
+function localSkillDir(name: string): string | null {
+  return projectSkillDir(name) ?? legacySkillDir(name);
 }
 
 export function readSkillSource(name: string): SkillSource {
-  const dir = existingDir(name);
+  const skill = discoverSkills().skills.find((item) => item.name === name);
+  const dir = skill?.dir ?? null;
   if (!dir) throw new Error(`No skill named "${name}".`);
   const raw = readFileSync(path.join(dir, "SKILL.md"), "utf8");
   const parsed = splitFrontmatter(raw);
@@ -99,16 +118,23 @@ export function readSkillSource(name: string): SkillSource {
       references.push({ name: entry, content: readFileSync(path.join(refDir, entry), "utf8") });
     }
   }
-  const skill = discoverSkills().skills.find((item) => item.name === name);
   return {
     name: parsed.data.name,
     description: parsed.data.description,
     body: parsed.body.trim(),
-    disableModelInvocation: parsed.data["disable-model-invocation"] === true,
+    disableModelInvocation: skill?.disableModelInvocation ?? parsed.data["disable-model-invocation"] === true,
     references,
-    path: skill?.rel ?? `skills/${name}`,
+    path: skill?.rel ?? `.agents/skills/${name}`,
     files: skill?.files ?? ["SKILL.md"],
   };
+}
+
+function assertDeletable(dir: string) {
+  const resolved = path.resolve(dir);
+  const roots = [path.resolve(skillsDir()), path.resolve(legacySkillsDir())];
+  const allowed = roots.some((root) => resolved !== root && resolved.startsWith(`${root}${path.sep}`));
+  if (!allowed) throw new Error("Refusing to delete a path outside the skills directory.");
+  rmSync(resolved, { recursive: true, force: true });
 }
 
 function writeReferences(dir: string, references: SkillReferenceInput[]) {
@@ -151,7 +177,7 @@ export function draftFromBody(body: Record<string, unknown>, fallbackName?: stri
 
 export function createSkill(draft: SkillDraft): SkillSource {
   validateDraft(draft);
-  if (existingDir(draft.name)) throw new Error(`A skill named "${draft.name}" already exists.`);
+  if (localSkillDir(draft.name)) throw new Error(`A skill named "${draft.name}" already exists.`);
   const dir = directoryFor(draft.name);
   mkdirSync(dir, { recursive: true });
   writeAtomic(path.join(dir, "SKILL.md"), renderSkillMarkdown(draft));
@@ -161,32 +187,30 @@ export function createSkill(draft: SkillDraft): SkillSource {
 
 export function updateSkill(name: string, draft: SkillDraft): SkillSource {
   validateDraft(draft);
-  const current = existingDir(name);
-  if (!current) throw new Error(`No skill named "${name}".`);
-  if (draft.name !== name) {
-    assertName(draft.name);
-    if (existingDir(draft.name)) throw new Error(`A skill named "${draft.name}" already exists.`);
-    const next = directoryFor(draft.name);
-    mkdirSync(path.dirname(next), { recursive: true });
-    rmSync(next, { recursive: true, force: true });
-    mkdirSync(next, { recursive: true });
-    writeAtomic(path.join(next, "SKILL.md"), renderSkillMarkdown(draft));
-    writeReferences(next, draft.references);
-    rmSync(current, { recursive: true, force: true });
-    return readSkillSource(draft.name);
+  const current = localSkillDir(name);
+  const discovered = discoverSkills().skills.find((skill) => skill.name === name);
+  if (!current && !discovered) throw new Error(`No skill named "${name}".`);
+  if (draft.name !== name && localSkillDir(draft.name)) {
+    throw new Error(`A skill named "${draft.name}" already exists.`);
   }
-  writeAtomic(path.join(current, "SKILL.md"), renderSkillMarkdown(draft));
-  writeReferences(current, draft.references);
-  return readSkillSource(name);
+  const next = directoryFor(draft.name);
+  mkdirSync(next, { recursive: true });
+  writeAtomic(path.join(next, "SKILL.md"), renderSkillMarkdown(draft));
+  writeReferences(next, draft.references);
+  if (current && path.resolve(current) !== path.resolve(next)) assertDeletable(current);
+  return readSkillSource(draft.name);
 }
 
 export function deleteSkill(name: string): void {
-  const dir = existingDir(name);
-  if (!dir) throw new Error(`No skill named "${name}".`);
-  const root = skillRoot();
-  const resolved = path.resolve(dir);
-  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
-    throw new Error("Refusing to delete a path outside the skills directory.");
+  const dir = localSkillDir(name);
+  if (!dir) {
+    const installed = discoverSkills().skills.find((skill) => skill.name === name);
+    if (installed?.origin === "global") {
+      throw new Error(
+        `"${name}" is installed globally at ${installed.rel}. Remove that folder yourself. The desk only deletes skills in .agents/skills.`,
+      );
+    }
+    throw new Error(`No skill named "${name}".`);
   }
-  rmSync(resolved, { recursive: true, force: true });
+  assertDeletable(dir);
 }
