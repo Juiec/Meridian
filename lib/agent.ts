@@ -9,7 +9,8 @@ import { streamCompletion, type ApiMessage, type CompletionDelta, type Completio
 import { readEntries } from "@/lib/memory";
 import { assembleSystemPrompt, skillsChangedNote } from "@/lib/prompt";
 import { getSettings } from "@/lib/settings";
-import { filterToolsForMode, modeInstructions } from "@/lib/chat-mode";
+import { filterToolsForMode } from "@/lib/chat-mode";
+import { expandProjectMentions, turnInstructions } from "@/lib/workspace";
 import { deriveTitle, parseSkillCommand } from "@/lib/skill-command";
 import { discoverSkills, readSkillFile, skillsIndexHash } from "@/lib/skills";
 import {
@@ -41,23 +42,27 @@ async function* defaultComplete(request: CompletionRequest): AsyncGenerator<Comp
   yield* streamCompletion(request);
 }
 
-function expandUserContent(content: string): string {
+function expandUserContent(content: string, projectId: string | null): string {
   const parsed = parseSkillCommand(content);
-  if (!parsed) return content;
-  const request =
-    parsed.rest.trim() ||
-    (parsed.skills.length > 0
-      ? "The user invoked this skill without extra instructions. Follow it, and ask one focused question if you cannot proceed."
-      : `The user switched to ${parsed.mode} mode.`);
-  if (parsed.skills.length === 0) return request;
-  const blocks = parsed.skills.map((name) => {
-    const loaded = readSkillFile(name);
-    if (!loaded.ok) {
-      return `Skill ${name} was requested but is not installed. Available: ${loaded.available.join(", ") || "none"}.`;
-    }
-    return `<skill name="${name}">\n${loaded.content}\n</skill>`;
-  });
-  return `${blocks.join("\n\n")}\n\nUser request:\n${request}`;
+  const base = !parsed
+    ? content
+    : (() => {
+        const request =
+          parsed.rest.trim() ||
+          (parsed.skills.length > 0
+            ? "The user invoked this skill without extra instructions. Follow it, and ask one focused question if you cannot proceed."
+            : `The user switched to ${parsed.mode} mode.`);
+        if (parsed.skills.length === 0) return request;
+        const blocks = parsed.skills.map((name) => {
+          const loaded = readSkillFile(name);
+          if (!loaded.ok) {
+            return `Skill ${name} was requested but is not installed. Available: ${loaded.available.join(", ") || "none"}.`;
+          }
+          return `<skill name="${name}">\n${loaded.content}\n</skill>`;
+        });
+        return `${blocks.join("\n\n")}\n\nUser request:\n${request}`;
+      })();
+  return expandProjectMentions(base, projectId);
 }
 
 export function buildApiMessages(sessionId: string): ApiMessage[] {
@@ -76,7 +81,7 @@ export function buildApiMessages(sessionId: string): ApiMessage[] {
   }
   for (const message of visibleMessages(session)) {
     if (message.role === "user") {
-      const text = modelVisibleUserText(expandUserContent(message.content), message.attachments);
+      const text = modelVisibleUserText(expandUserContent(message.content, session.projectId), message.attachments);
       const images = message.attachments.filter((item) => item.kind === "image" && item.dataUrl);
       api.push({
         role: "user",
@@ -480,7 +485,7 @@ export async function runTurn(input: {
     const current = getSession(input.sessionId);
     if (!current) throw new Error("Session not found.");
     const messages: ApiMessage[] = [
-      { role: "system", content: `${current.systemPrompt}\n\n${modeInstructions(current.chatMode)}` },
+      { role: "system", content: `${current.systemPrompt}\n\n${turnInstructions(current)}` },
       ...buildApiMessages(input.sessionId),
     ];
     if (forceText) {

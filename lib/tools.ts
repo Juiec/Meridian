@@ -5,6 +5,7 @@ import { applyMemory, MEMORY_LIMITS, type MemoryOp, type MemoryTarget } from "@/
 import { discoverSkills, readSkillFile } from "@/lib/skills";
 import { fileSessionAsTrip, getSession } from "@/lib/sessions";
 import { executeTravelTool } from "@/lib/travel";
+import { executeWorkspaceTool } from "@/lib/workspace";
 
 export type ToolDefinition = {
   type: "function";
@@ -266,6 +267,70 @@ export const TOOLS: ToolDefinition[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "workspace_list",
+      description:
+        "List files and folders in the project this chat is bound to. Paths are relative to that project. Omit path to list the top. Refuses paths outside the project.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          path: { type: "string", description: "Optional folder inside the project, such as src or a cloned repository name." },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "workspace_read",
+      description:
+        "Read a text file inside the bound project. Refuses secrets, binary files, and paths outside the project.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          path: { type: "string", description: "Relative path, such as README.md or repo/src/app.ts." },
+        },
+        required: ["path"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "workspace_write",
+      description:
+        "Create or replace a text file inside the bound project. Parent folders are created. Refuses secrets and paths outside the project. Does not run the file.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          path: { type: "string" },
+          content: { type: "string" },
+        },
+        required: ["path", "content"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "workspace_run",
+      description:
+        "Run a shell command in the bound project folder, such as a test or a build. Output is capped and the command stops after 60 seconds. The command starts in the project folder.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          command: { type: "string", description: "Command to run, such as npm test." },
+        },
+        required: ["command"],
+      },
+    },
+  },
 ];
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -402,6 +467,10 @@ export async function executeTool(
         error: error instanceof ImageSettingsError || error instanceof Error ? error.message : "Image generation failed.",
       };
     }
+  }
+
+  if (name.startsWith("workspace_")) {
+    return executeWorkspaceTool(name, args, context.sessionId);
   }
 
   if (name === "current_time") {

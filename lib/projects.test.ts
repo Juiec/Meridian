@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -30,6 +30,7 @@ describe("project folders", () => {
     expect(() => addProject("Again", root)).toThrow(/already a project/);
 
     removeProject(project.id);
+    expect(existsSync(path.join(root, "notes.txt"))).toBe(true);
     expect(listProjects()).toEqual([]);
     expect(() => removeProject(project.id)).toThrow(/not found/);
   });

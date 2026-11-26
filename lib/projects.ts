@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import path from "node:path";
 
+import { isSecretFilename } from "@/lib/attachments";
 import { writeAtomic } from "@/lib/atomic";
 import { dataDir } from "@/lib/paths";
 
@@ -12,6 +13,8 @@ export type ProjectRecord = {
   id: string;
   name: string;
   root: string;
+  /** True when Meridian created the folder under its own data directory. */
+  managed: boolean;
 };
 
 export type ProjectEntry = {
@@ -32,12 +35,16 @@ function isRecord(value: unknown): value is ProjectRecord {
   return typeof row.id === "string" && typeof row.name === "string" && typeof row.root === "string";
 }
 
+function normalize(row: ProjectRecord): ProjectRecord {
+  return { id: row.id, name: row.name, root: row.root, managed: row.managed === true };
+}
+
 function readAll(): ProjectRecord[] {
   const file = registryPath();
   if (!existsSync(file)) return [];
   const parsed = JSON.parse(readFileSync(file, "utf8")) as unknown;
   if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as Registry).projects)) return [];
-  return (parsed as Registry).projects.filter(isRecord);
+  return (parsed as Registry).projects.filter(isRecord).map(normalize);
 }
 
 function save(projects: ProjectRecord[]) {
@@ -54,18 +61,44 @@ function insideRoot(root: string, target: string): boolean {
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
-function ignored(name: string): boolean {
-  return name.startsWith(".") || SKIPPED.has(name.toLowerCase());
+function cleanName(name: string): string {
+  const clean = name.trim();
+  if (!clean) throw new Error("Name the project.");
+  if (clean.length > 80) throw new Error("Project name must be 80 characters or fewer.");
+  return clean;
+}
+
+function hiddenEntry(name: string, includeDotfiles: boolean): boolean {
+  if (SKIPPED.has(name.toLowerCase()) || name === ".git") return true;
+  if (isSecretFilename(name)) return true;
+  if (!includeDotfiles && name.startsWith(".")) return true;
+  return false;
+}
+
+export function projectsHome(): string {
+  return path.join(dataDir(), "projects");
+}
+
+export function getProject(id: string): ProjectRecord | null {
+  return readAll().find((project) => project.id === id) ?? null;
 }
 
 export function listProjects(): ProjectRecord[] {
   return readAll();
 }
 
+export function createProject(name: string): ProjectRecord {
+  const projectName = cleanName(name);
+  const id = randomUUID();
+  const root = path.join(projectsHome(), id);
+  mkdirSync(root, { recursive: true });
+  const project: ProjectRecord = { id, name: projectName, root, managed: true };
+  save([...readAll(), project]);
+  return project;
+}
+
 export function addProject(name: string, root: string): ProjectRecord {
-  const cleanName = name.trim();
-  if (!cleanName) throw new Error("Name the project.");
-  if (cleanName.length > 80) throw new Error("Project name must be 80 characters or fewer.");
+  const projectName = cleanName(name);
   const requested = root.trim();
   if (!requested) throw new Error("Give the full folder path.");
   const absolute = path.resolve(requested);
@@ -81,39 +114,70 @@ export function addProject(name: string, root: string): ProjectRecord {
   if (projects.some((project) => samePath(project.root, real))) {
     throw new Error("That folder is already a project.");
   }
-  const project: ProjectRecord = { id: randomUUID(), name: cleanName, root: real };
+  const project: ProjectRecord = { id: randomUUID(), name: projectName, root: real, managed: false };
   save([...projects, project]);
   return project;
 }
 
 export function removeProject(id: string) {
   const projects = readAll();
-  if (!projects.some((project) => project.id === id)) throw new Error("Project not found.");
-  save(projects.filter((project) => project.id !== id));
+  const project = projects.find((item) => item.id === id);
+  if (!project) throw new Error("Project not found.");
+  save(projects.filter((item) => item.id !== id));
+  if (!project.managed) return;
+  const expected = path.resolve(projectsHome(), id);
+  let real = "";
+  try {
+    if (!existsSync(project.root)) return;
+    real = realpathSync(project.root);
+  } catch {
+    return;
+  }
+  if (!samePath(real, expected) && !samePath(path.resolve(project.root), expected)) return;
+  rmSync(real, { recursive: true, force: true });
+}
+
+export function cleanRelative(relativePath: string): string {
+  const requested = relativePath.trim().replaceAll("\\", "/");
+  if (!requested) return "";
+  const parts = requested.split("/");
+  if (parts.some((part) => !part || part === "." || part === "..")) {
+    throw new Error("That path leaves the project.");
+  }
+  return parts.join("/");
+}
+
+export function resolveProjectPath(
+  id: string,
+  relativePath = "",
+): { project: ProjectRecord; root: string; absolute: string; relative: string } {
+  const project = getProject(id);
+  if (!project) throw new Error("Project not found.");
+  if (!existsSync(project.root)) throw new Error("The project folder is missing.");
+  const rootStat = lstatSync(project.root);
+  if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) throw new Error("That path is not a folder.");
+  const root = realpathSync(project.root);
+  const relative = cleanRelative(relativePath);
+  const absolute = path.resolve(root, relative);
+  if (!insideRoot(root, absolute)) throw new Error("That path leaves the project.");
+  return { project, root, absolute, relative };
 }
 
 export function listProjectDir(
   id: string,
   relativePath = "",
+  options?: { includeDotfiles?: boolean },
 ): { entries: ProjectEntry[]; truncated: boolean } {
-  const project = readAll().find((item) => item.id === id);
-  if (!project) throw new Error("Project not found.");
-  if (!existsSync(project.root)) throw new Error("The project folder is missing.");
-  const root = realpathSync(project.root);
-  const requested = relativePath.trim().replaceAll("\\", "/");
-  if (requested.split("/").some((part) => part === ".." || part === ".")) {
-    throw new Error("That path leaves the project.");
-  }
-  const absolute = path.resolve(root, requested);
-  if (!insideRoot(root, absolute)) throw new Error("That path leaves the project.");
-  if (!existsSync(absolute)) throw new Error("That folder is missing.");
-  const listed = lstatSync(absolute);
+  const located = resolveProjectPath(id, relativePath);
+  if (!existsSync(located.absolute)) throw new Error("That folder is missing.");
+  const listed = lstatSync(located.absolute);
   if (listed.isSymbolicLink() || !listed.isDirectory()) throw new Error("That path is not a folder.");
-  const real = realpathSync(absolute);
-  if (!insideRoot(root, real)) throw new Error("That path leaves the project.");
+  const real = realpathSync(located.absolute);
+  if (!insideRoot(located.root, real)) throw new Error("That path leaves the project.");
+  const requested = located.relative;
 
   const entries = readdirSync(real, { withFileTypes: true })
-    .filter((entry) => !ignored(entry.name) && !entry.isSymbolicLink())
+    .filter((entry) => !hiddenEntry(entry.name, options?.includeDotfiles === true) && !entry.isSymbolicLink())
     .map((entry) => ({
       name: entry.name,
       path: requested ? `${requested}/${entry.name}` : entry.name,

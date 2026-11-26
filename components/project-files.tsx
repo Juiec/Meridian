@@ -11,18 +11,28 @@ import { cn } from "cn";
 
 export function ProjectFiles({
   onMention,
+  onUse,
+  onChanged,
+  activeProjectId,
 }: {
   onMention: (line: string) => void;
+  onUse: (projectId: string) => Promise<void>;
+  onChanged?: () => void;
+  activeProjectId: string | null;
 }) {
   const [projects, setProjects] = useState<ProjectRecord[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [adding, setAdding] = useState(false);
+  const [linkExisting, setLinkExisting] = useState(false);
   const [name, setName] = useState("");
   const [root, setRoot] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [treeNonce, setTreeNonce] = useState(0);
+  const [cloningId, setCloningId] = useState<string | null>(null);
+  const [cloneUrl, setCloneUrl] = useState("");
 
   useEffect(() => {
     const ac = new AbortController();
@@ -52,14 +62,16 @@ export function ProjectFiles({
         await fetch("/api/projects", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, root }),
+          body: JSON.stringify(linkExisting ? { name, root } : { name }),
         }),
       );
       setName("");
       setRoot("");
       setAdding(false);
+      setLinkExisting(false);
       setOpenId(data.project.id);
       setReloadKey((value) => value + 1);
+      await onUse(data.project.id);
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Could not add that folder.");
     } finally {
@@ -67,12 +79,37 @@ export function ProjectFiles({
     }
   }
 
-  async function forget(id: string) {
+  async function clone(projectId: string) {
+    setFormError(null);
+    setCloningId(projectId);
+    try {
+      await readJson(
+        await fetch(`/api/projects/${encodeURIComponent(projectId)}/clone`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: cloneUrl }),
+        }),
+      );
+      setCloneUrl("");
+      setTreeNonce((value) => value + 1);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Could not clone that repository.");
+    } finally {
+      setCloningId(null);
+    }
+  }
+
+  async function forget(project: ProjectRecord) {
+    const message = project.managed
+      ? `Delete ${project.name} and the folder Meridian created for it? Cloned files in that folder will be removed.`
+      : `Forget ${project.name}? The folder stays on this machine.`;
+    if (!window.confirm(message)) return;
     setFormError(null);
     try {
-      await readJson(await fetch(`/api/projects/${encodeURIComponent(id)}`, { method: "DELETE" }));
-      if (openId === id) setOpenId(null);
+      await readJson(await fetch(`/api/projects/${encodeURIComponent(project.id)}`, { method: "DELETE" }));
+      if (openId === project.id) setOpenId(null);
       setReloadKey((value) => value + 1);
+      onChanged?.();
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Could not forget that project.");
     }
@@ -82,7 +119,7 @@ export function ProjectFiles({
     <div className="space-y-2">
       <Button type="button" variant="outline" className="w-full" onClick={() => setAdding((value) => !value)}>
         <FolderPlus />
-        {adding ? "Close form" : "Add folder"}
+        {adding ? "Close form" : "New project"}
       </Button>
       {adding ? (
         <form
@@ -98,22 +135,37 @@ export function ProjectFiles({
             placeholder="Project name"
             aria-label="Project name"
           />
-          <Input
-            value={root}
-            onChange={(event) => setRoot(event.target.value)}
-            placeholder="Full folder path"
-            aria-label="Project folder path"
-            spellCheck={false}
-          />
+          {linkExisting ? (
+            <Input
+              value={root}
+              onChange={(event) => setRoot(event.target.value)}
+              placeholder="Full folder path"
+              aria-label="Project folder path"
+              spellCheck={false}
+            />
+          ) : null}
           <p className="text-xs leading-5 text-muted-foreground">
-            The folder must already be on this machine. Forgetting a project drops the path and leaves the files. Retrieval across them comes later.
+            {linkExisting
+              ? "The folder must already be on this machine. Forgetting it drops the path and leaves the files."
+              : "Meridian creates an empty folder on this machine. Clone a repository into it, then this chat can add files and run tests there."}
           </p>
-          <div className="flex gap-2">
-            <Button type="submit" size="sm" disabled={pending || !name.trim() || !root.trim()}>
-              Save project
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit" size="sm" disabled={pending || !name.trim() || (linkExisting && !root.trim())}>
+              {linkExisting ? "Link folder" : "Create project"}
             </Button>
             <Button type="button" size="sm" variant="ghost" onClick={() => setAdding(false)}>
               Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setLinkExisting((value) => !value);
+                setFormError(null);
+              }}
+            >
+              {linkExisting ? "Create a new folder" : "Link an existing folder"}
             </Button>
           </div>
           {formError ? <p className="text-xs text-destructive">{formError}</p> : null}
@@ -130,15 +182,16 @@ export function ProjectFiles({
         <p className="px-1 py-2 text-sm text-muted-foreground">Loading projects…</p>
       ) : projects.length === 0 ? (
         <p className="px-1 py-2 text-sm leading-5 text-muted-foreground">
-          No project folders yet. Add one and Meridian will list its files here.
+          No projects yet. Create one and Meridian will keep its files on this machine.
         </p>
       ) : (
         <ul className="space-y-1">
           {projects.map((project) => {
             const open = openId === project.id;
+            const active = activeProjectId === project.id;
             return (
               <li key={project.id}>
-                <div className={cn("flex items-center gap-1 rounded-lg pr-1", open && "bg-sidebar-accent/60")}>
+                <div className={cn("flex items-center gap-1 rounded-lg pr-1", (open || active) && "bg-sidebar-accent/60")}>
                   <button
                     type="button"
                     className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-2 text-left"
@@ -156,26 +209,58 @@ export function ProjectFiles({
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm">{project.name}</span>
                       <span className="block truncate text-[11px] text-muted-foreground" title={project.root}>
-                        {project.root}
+                        {active ? "In this chat" : project.managed ? "Folder on this machine" : project.root}
                       </span>
                     </span>
                   </button>
+                  {active ? null : (
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-sm px-1.5 py-1 text-[11px] text-copper underline-offset-2 hover:underline"
+                      onClick={() => void onUse(project.id)}
+                    >
+                      Work here
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="shrink-0 rounded-sm px-1.5 py-1 text-[11px] text-muted-foreground underline-offset-2 hover:underline"
-                    onClick={() => void forget(project.id)}
+                    onClick={() => void forget(project)}
                   >
-                    Forget
+                    {project.managed ? "Delete" : "Forget"}
                   </button>
                 </div>
                 {open ? (
-                  <ProjectDir
-                    projectId={project.id}
-                    projectName={project.name}
-                    relativePath=""
-                    depth={0}
-                    onMention={onMention}
-                  />
+                  <div className="space-y-1">
+                    <form
+                      className="flex gap-1 px-2 pt-1"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void clone(project.id);
+                      }}
+                    >
+                      <Input
+                        value={openId === project.id ? cloneUrl : ""}
+                        onChange={(event) => setCloneUrl(event.target.value)}
+                        placeholder="https://github.com/org/repo.git"
+                        aria-label={`Clone into ${project.name}`}
+                        spellCheck={false}
+                        className="h-8 text-xs"
+                      />
+                      <Button type="submit" size="sm" variant="outline" disabled={cloningId === project.id || !cloneUrl.trim()}>
+                        {cloningId === project.id ? "Cloning" : "Clone"}
+                      </Button>
+                    </form>
+                    <ProjectDir
+                      key={`${project.id}:${treeNonce}`}
+                      projectId={project.id}
+                      projectName={project.name}
+                      relativePath=""
+                      depth={0}
+                      onMention={onMention}
+                      onUse={onUse}
+                    />
+                  </div>
                 ) : null}
               </li>
             );
@@ -193,12 +278,14 @@ function ProjectDir({
   relativePath,
   depth,
   onMention,
+  onUse,
 }: {
   projectId: string;
   projectName: string;
   relativePath: string;
   depth: number;
   onMention: (line: string) => void;
+  onUse: (projectId: string) => Promise<void>;
 }) {
   const [state, setState] = useState<{ entries: ProjectEntry[]; truncated: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -231,7 +318,13 @@ function ProjectDir({
     return <p className="px-2 py-1.5 text-xs text-muted-foreground">Reading folder…</p>;
   }
   if (state.entries.length === 0) {
-    return <p className="px-2 py-1.5 text-xs text-muted-foreground">This folder is empty.</p>;
+    return (
+      <p className="px-2 py-1.5 text-xs leading-5 text-muted-foreground">
+        {depth === 0
+          ? "This folder is empty. Clone a repository, or let the agent create files here."
+          : "This folder is empty."}
+      </p>
+    );
   }
 
   return (
@@ -245,6 +338,7 @@ function ProjectDir({
             entry={entry}
             depth={depth}
             onMention={onMention}
+            onUse={onUse}
           />
         ) : (
           <li key={entry.path}>
@@ -252,8 +346,13 @@ function ProjectDir({
               type="button"
               className="flex w-full items-center gap-1.5 rounded-md py-1 pr-2 text-left text-sm hover:bg-sidebar-accent/60"
               style={{ paddingLeft: `${12 + depth * 14}px` }}
-              title={`Mention ${projectName}/${entry.path}`}
-              onClick={() => onMention(`[${projectName}/${entry.path}]`)}
+              title={`Open ${projectName}/${entry.path} in this chat`}
+              onClick={() => {
+                void (async () => {
+                  await onUse(projectId);
+                  onMention(`[${projectName}/${entry.path}]`);
+                })();
+              }}
             >
               <File aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
               <span className="truncate">{entry.name}</span>
@@ -274,12 +373,14 @@ function DirRow({
   entry,
   depth,
   onMention,
+  onUse,
 }: {
   projectId: string;
   projectName: string;
   entry: ProjectEntry;
   depth: number;
   onMention: (line: string) => void;
+  onUse: (projectId: string) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -308,6 +409,7 @@ function DirRow({
           relativePath={entry.path}
           depth={depth + 1}
           onMention={onMention}
+          onUse={onUse}
         />
       ) : null}
     </li>
